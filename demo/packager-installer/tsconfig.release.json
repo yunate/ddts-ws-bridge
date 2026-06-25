@@ -1,0 +1,27 @@
+{
+  // 发布编译配置：extends 开发用 ../server/tsconfig.json，仅覆盖「产物相关」项。
+  // 注意：这里显式重声明 include（路径相对本文件所在的 packager-installer/），避免 extends
+  // 继承 include 的相对路径歧义；rootDir 固定为 demo 根（..），使产物结构稳定为
+  //   <outDir>/server/src/...   （服务端编译产物）
+  //   <outDir>/common/...       （共享层：ws_bridge/protocol/validator）
+  // 从而与运行时 directoryManager「上溯 3 层到仓库根」、以及各处 ../../../common 相对引用一致。
+  // preserveSymlinks 由 base 继承并保持为 true：让 ws_bridge 软链接按 demo/common/ws_bridge
+  // 路径参与编译，产物落到 <outDir>/common/ws_bridge（而非解真到仓库 src/，那样会跑出 rootDir）。
+  "extends": "../server/tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "outDir": "../dist-release/.build",
+    "typeRoots": ["../server/node_modules/@types"],
+    "sourceMap": false,
+    "declaration": false,
+    "removeComments": true
+  },
+  "include": [
+    "../server/src",
+    "../common/validator.ts",
+    "../common/protocol",
+    "../common/ws_bridge/peer.ts",
+    "../common/ws_bridge/wsServerPeer.ts",
+    "../common/ws_bridge/rpc.ts"
+  ]
+}

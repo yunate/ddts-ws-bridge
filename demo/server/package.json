@@ -1,0 +1,24 @@
+{
+  "name": "demo-server",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Demo 后端：HTTP 静态服务 + WebSocket 桥（/bridge），含 SessionManager 与 DirectoryManager。",
+  "scripts": {
+    "start": "node --preserve-symlinks --preserve-symlinks-main -r ts-node/register src/index.ts",
+    "debug": "node --inspect=127.0.0.1:9229 --preserve-symlinks --preserve-symlinks-main -r ts-node/register src/index.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "_note": {
+    "commons": "server 经软链接 ../common/ws_bridge（= 仓库 ../../src）引用 bridge 库；其 wsServerPeer 依赖 ws，通过 ../common/node_modules 解析，故构建前需在 common 内 npm install。",
+    "preserveSymlinks": "保持软链接路径不解真，使被引用的 bridge 库从 common 而非仓库根解析依赖。"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/ws": "^8.5.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "demo-common",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Demo 共享层：ws_bridge（软链接到仓库 ../../src 的 bridge 库）+ protocol 契约 + 通用 validator。被 client 与 server 同时引用。",
+  "_note": {
+    "ws_bridge": "ws_bridge 是对仓库根 ../../src 的软链接（Windows junction），即被复用的 bridge 库源码。",
+    "ws": "被 ws_bridge/wsServerPeer.ts 使用（server 端 WSServerBridgeListener 依赖），故在本层安装；server 经软链接解析依赖时从这里找到 ws."
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

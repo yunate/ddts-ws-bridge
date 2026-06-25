@@ -1,0 +1,26 @@
+{
+  "name": "demo-client",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Demo 前端：多端聊天室（Vue 3 + Vite），构建产物由 server 静态托管。",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "_note": {
+    "commons": "前端经软链接 ../common/ws_bridge（= 仓库 ../../src）引用 CreateWSClientPeer / BridgeRouter，与 server 共用同一份协议契约。浏览器用原生 WebSocket，无需 ws 依赖。",
+    "dev": "npm run dev 起 Vite(5173) 并把 /bridge 代理到后端 3201；生产用 npm run build 打包到 dist/ 由 server 托管。"
+  },
+  "dependencies": {
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "typescript": "^5.4.0",
+    "vite": "^5.4.0",
+    "vue-tsc": "^2.2.0"
+  }
+}
