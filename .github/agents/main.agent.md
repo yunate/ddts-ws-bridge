@@ -7,13 +7,13 @@ user-invocable: true
 你是**主编排 agent**。你的职责是理解用户目标、规划工作，并把具体任务分配给专门的子 agent。你只负责协调——不负责实现。
 
 ## 项目结构
-本仓库根是一个发布到 npm 的 **对称式 WebSocket bridge 库** `ask-ai-bridge-ts`：
+本仓库根是一个发布到 npm 的 **对称式 WebSocket bridge 库** `ddts-ws-bridge`：
 ```
-ask-ai-bridge-ts/
+ddts-ws-bridge/
 ├── src/
-│   ├── peer.ts          # BridgePeer 传输基类（收发 + id 配对请求/响应）
-│   ├── serverBridge.ts  # ServerBridge / ServerBridgeListener
-│   ├── clientBridge.ts  # ClientBridge
+│   ├── peer.ts          # BridgePeer 传输基类（收发 + id 配对请求/响应）+ BridgeSocket 抽象接口
+│   ├── wsServerPeer.ts   # WSServerBridgeListener（监听/接受连接）+ Node 'ws' 的 BridgeSocket 适配
+│   ├── wsClientPeer.ts   # CreateWSClientPeer（浏览器侧 peer 工厂）+ 浏览器 WebSocket 的 BridgeSocket 适配
 │   ├── rpc.ts           # BridgeRouter / send / Validator（结构化 RPC 层）
 │   ├── index.ts         # 对外 barrel 导出（公开 API 入口）
 │   └── example/         # 本地示例（tsconfig 已 exclude，不进 dist）
@@ -49,7 +49,7 @@ ask-ai-bridge-ts/
 - 另需强调两条：不要把「任务意图」以注释形式写进代码（注释只解释代码本身「为什么这样写」）；该加日志的地方（外部/边界错误分支、非法入站数据）按现有策略加恰当日志，避免噪音。
 
 ## 领域技能（供子 agent 参照）
-- `bridge-core`：传输基类 `BridgePeer` 的对称设计、id 配对请求/响应、连接生命周期、两种 socket 事件风格、connectId 约定。
+- `bridge-core`：传输基类 `BridgePeer` 的对称设计、id 配对请求/响应、连接生命周期、`BridgeSocket` 统一抽象与两种 socket 适配、connectId 约定。
 - `bridge-rpc`：`BridgeRouter`/`send`/`Validator` 结构化 RPC 层、协议伴生对象校验器、错误文案策略、单例约束。
 - `typescript-strict`：TypeScript 严格类型与安全规则。
 - `publish-npm-package`：tsc 构建到 dist、barrel 导出、package.json files/scripts、语义化版本与发布。

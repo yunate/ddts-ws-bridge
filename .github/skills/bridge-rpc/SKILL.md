@@ -31,7 +31,7 @@ await send(peer, 'sys.ping');
 ```
 
 - 内部：取 `caller.getConnectId()`，`caller.send1<Response<TResult>>({ method, params, connectId })`，`ok` 则返回 `data`，否则 `throw new Error(error)`。
-- **`peer` 从哪来**：调用方持有的 `BridgePeer`（client 端是 `ClientBridge`，server 端是某条连接的 `ServerBridge`）。
+- **`peer` 从哪来**：调用方持有的 `BridgePeer`（client 端由 `CreateWSClientPeer` 创建，server 端是某条连接对应的 `BridgePeer`，由 `WSServerBridgeListener` 的 `onConnection` 提供）。
 
 ## 注册 handler：BridgeRouter
 

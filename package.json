@@ -1,5 +1,5 @@
 {
-  "name": "ask-ai-bridge-ts",
+  "name": "ddts-ws-bridge",
   "version": "1.0.0",
   "description": "Symmetric TypeScript WebSocket client/server bridge.",
   "files": [

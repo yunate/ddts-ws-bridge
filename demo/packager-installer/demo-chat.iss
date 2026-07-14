@@ -11,7 +11,7 @@
 #endif
 
 #define AppName "WS Bridge Demo Chat"
-#define AppPublisher "ask-ai-bridge-ts"
+#define AppPublisher "ddts-ws-bridge"
 #define LauncherBat "demo-chat.bat"
 
 [Setup]

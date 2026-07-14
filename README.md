@@ -1,4 +1,4 @@
-# ask-ai-bridge-ts
+# ddts-ws-bridge
 
 对称式的 TypeScript WebSocket client/server bridge。server 与 client 共享同一套 `BridgePeer` 能力，双方都可以主动 `send()` 并 `await` 对端的回复（基于消息 id 配对的请求/响应模型），同时支持单向 `post()`。
 
@@ -7,7 +7,7 @@
 ## 安装
 
 ```bash
-npm install ask-ai-bridge-ts
+npm install ddts-ws-bridge
 ```
 
 > 依赖 [`ws`](https://www.npmjs.com/package/ws)。浏览器端使用原生 `WebSocket`。
@@ -17,23 +17,25 @@ npm install ask-ai-bridge-ts
 ### 服务端
 
 ```ts
-import { ServerBridge } from 'ask-ai-bridge-ts';
+import { WSServerBridgeListener } from 'ddts-ws-bridge';
 
-const server = new ServerBridge('ws://localhost:8080');
+const listener = new WSServerBridgeListener('ws://localhost:8080');
 
-server.onConnect(() => console.log('客户端已连接'));
-server.on_message((raw) => {
-  const { name, body } = JSON.parse(raw);
-  return JSON.stringify({ reply: `已收到: ${body.text}` });
+listener.onConnection((peer) => {
+  peer.onConnect(() => console.log('客户端已连接'));
+  peer.on_message((raw) => {
+    const { name, body } = JSON.parse(raw);
+    return JSON.stringify({ reply: `已收到: ${body.text}` });
+  });
 });
 ```
 
-### 客户端（Node）
+### 客户端（浏览器）
 
 ```ts
-import { ClientBridge } from 'ask-ai-bridge-ts';
+import { CreateWSClientPeer } from 'ddts-ws-bridge';
 
-const client = new ClientBridge('ws://localhost:8080');
+const client = CreateWSClientPeer('ws://localhost:8080');
 
 await client.wait_for_connect();
 const resRaw = await client.send(
@@ -44,7 +46,7 @@ console.log(JSON.parse(resRaw));
 
 ## API 概览
 
-`BridgePeer`（`ServerBridge` / `ClientBridge` 的基类）核心方法：
+`BridgePeer`（server 端由 `WSServerBridgeListener` 创建、client 端由 `CreateWSClientPeer` 创建）核心方法：
 
 | 方法 | 说明 |
 | --- | --- |
