@@ -5,7 +5,7 @@ let visitorCounter = 0;
 
 // 每条 UI 连接对应一个 Session：持有该连接专属的 bridge peer 与身份信息（sessionId / name）。
 // 多个浏览器标签页 = 多个连接 = 多个 Session，各自独立，互不串扰。
-// 参考 youtube_downloader 的 Session：本 demo 精简为「昵称 + bridge」，未承载 taskList。
+// 本 demo 精简为「昵称 + bridge」；业务态（如任务列表、订阅集）按需挂到此处。
 export class Session {
   constructor(bridge: BridgePeer) {
     this.bridge = bridge;

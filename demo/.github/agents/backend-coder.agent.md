@@ -15,7 +15,7 @@ server/src/
 ├── app.ts              # http 静态服务（托管 client/dist）
 ├── bridge/             # connect.ts 挂 /bridge；remote_router / remote_api
 ├── session/            # Session + SessionManager（按 connectId 管理连接）
-└── lib/                # DirectoryManager（路径单一事实来源）、chatStore 等
+└── lib/                # DirectoryManager（路径单一事实来源）等单例/工具
 ```
 - 前后端不走 REST/HTTP API，而是通过 `common/ws_bridge/` 的 WebSocket 桥做 RPC：入站处理器写 `remote_router/`，主动推送写 `remote_api/`。
 - 需要本连接身份时用 `getSession(peer)`（`peer.getConnectId()` → `SessionManager`）；推送只发给目标 `session.bridge`。

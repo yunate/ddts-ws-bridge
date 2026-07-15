@@ -8,66 +8,72 @@ export type MessageHandler = (data: string) => string | Promise<string>;
 export interface BridgeSocket {
   send(data: string): void;
   close(): void;
-  on_message(handler: (data: string) => void): void;
-  on_close(handler: () => void): void;
-  on_connected(handler: () => void): void;
-  on_error(handler: (err: Error) => void): void;
-  is_connected(): boolean;
+  onMessage(handler: (data: string) => void): void;
+  onClose(handler: () => void): void;
+  onConnected(handler: () => void): void;
+  onError(handler: (err: Error) => void): void;
+  isConnected(): boolean;
 }
 
 export class BridgePeer {
   constructor(options: PeerOptions = {}) {
-    this.timeout = options.timeout ?? 30000;
+    this._timeout = options.timeout ?? 30000;
   }
 
   public setSocket(socket: BridgeSocket, connectId: string): void {
     this.socket = socket;
     this.connectId = connectId;
 
-    socket.on_message((data) => void this._onmessage(data));
-    socket.on_close(() => this._handleDisconnect());
-    socket.on_connected(() => this._handleConnect());
-    socket.on_error((err) => {
+    socket.onMessage((data) => void this._onMessage(data));
+    socket.onClose(() => this._handleDisconnect());
+    socket.onConnected(() => this._handleConnect());
+    socket.onError((err) => {
       console.error('[bridge] socket 错误:', err.message);
     });
 
-    if (socket.is_connected()) this._handleConnect();
+    if (socket.isConnected()) this._handleConnect();
   }
 
   public onConnect(listener: () => void): void {
-    this.connectListeners.push(listener);
+    this._connectListeners.push(listener);
   }
 
   public onDisconnect(listener: () => void): void {
-    this.disconnectListeners.push(listener);
+    this._disconnectListeners.push(listener);
   }
 
-  public async wait_for_connect(): Promise<void> {
-    if (this.connected) return Promise.resolve();
-    return new Promise<void>((resolve) => {
+  public async waitForConnect(timeout?: number): Promise<void> {
+    if (this._connected) return Promise.resolve();
+    return new Promise<void>((resolve, reject) => {
+      const timer = timeout === undefined ? undefined : setTimeout(() => {
+        const i = this._connectListeners.indexOf(once);
+        if (i >= 0) this._connectListeners.splice(i, 1);
+        reject(new Error('Wait for connect timed out'));
+      }, timeout);
       const once = () => {
-        const i = this.connectListeners.indexOf(once);
-        if (i >= 0) this.connectListeners.splice(i, 1);
+        const i = this._connectListeners.indexOf(once);
+        if (i >= 0) this._connectListeners.splice(i, 1);
+        if (timer !== undefined) clearTimeout(timer);
         resolve();
       };
-      this.connectListeners.push(once);
+      this._connectListeners.push(once);
     });
   }
 
-  public wait_for_disconnect(): Promise<void> {
-    if (!this.connected) return Promise.resolve();
+  public waitForDisconnect(): Promise<void> {
+    if (!this._connected) return Promise.resolve();
     return new Promise<void>((resolve) => {
       const once = () => {
-        const i = this.disconnectListeners.indexOf(once);
-        if (i >= 0) this.disconnectListeners.splice(i, 1);
+        const i = this._disconnectListeners.indexOf(once);
+        if (i >= 0) this._disconnectListeners.splice(i, 1);
         resolve();
       };
-      this.disconnectListeners.push(once);
+      this._disconnectListeners.push(once);
     });
   }
 
-  public isconnect(): boolean {
-    return this.connected;
+  public isConnected(): boolean {
+    return this._connected;
   }
 
   public getConnectId(): string {
@@ -77,43 +83,39 @@ export class BridgePeer {
     return this.connectId;
   }
 
-  public on_message(handler: MessageHandler): void {
-    this.handler = handler;
+  public onMessage(handler: MessageHandler): void {
+    this._handler = handler;
   }
 
   public async send(data: string): Promise<string> {
-    await this.wait_for_connect();
+    const start = Date.now();
+    await this.waitForConnect(this._timeout);
+    const remaining = Math.max(0, this._timeout - (Date.now() - start));
     const id = BridgePeer._genId();
     const envelope: RawMessage = { id, kind: 'request', data };
 
     return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`Request timed out after ${this.timeout}ms`));
-      }, this.timeout);
+        this._pending.delete(id);
+        reject(new Error(`Request timed out after ${remaining}ms`));
+      }, remaining);
 
-      this.pending.set(id, { resolve, reject, timer });
+      this._pending.set(id, { resolve, reject, timer });
 
       try {
         this._post(JSON.stringify(envelope));
       } catch (err) {
         clearTimeout(timer);
-        this.pending.delete(id);
+        this._pending.delete(id);
         reject(err as Error);
       }
     });
   }
 
-  public async send1<TResult = unknown>(body: unknown): Promise<TResult> {
-    const data = JSON.stringify(body);
-    const resRaw = await this.send(data);
-    return JSON.parse(resRaw) as TResult;
-  }
-
   public async close(): Promise<void> {
     if (!this.socket) return;
-    if (this.connected) {
-      const done = this.wait_for_disconnect();
+    if (this._connected) {
+      const done = this.waitForDisconnect();
       this.socket.close();
       await done;
     } else {
@@ -128,22 +130,22 @@ export class BridgePeer {
   }
 
   private _handleConnect(): void {
-    if (this.connected) return;
-    this.connected = true;
-    for (const l of [...this.connectListeners]) l();
+    if (this._connected) return;
+    this._connected = true;
+    for (const l of [...this._connectListeners]) l();
   }
 
   private _handleDisconnect(): void {
-    if (!this.connected) return;
-    this.connected = false;
-    for (const l of [...this.disconnectListeners]) l();
+    if (!this._connected) return;
+    this._connected = false;
+    for (const l of [...this._disconnectListeners]) l();
 
     // 拒绝所有等待中的请求。
-    for (const waiter of this.pending.values()) {
+    for (const waiter of this._pending.values()) {
       clearTimeout(waiter.timer);
       waiter.reject(new Error('Connection closed'));
     }
-    this.pending.clear();
+    this._pending.clear();
   }
 
   private _post(raw: string): void {
@@ -151,7 +153,7 @@ export class BridgePeer {
     this.socket.send(raw);
   }
 
-  private async _onmessage(raw: string): Promise<void> {
+  private async _onMessage(raw: string): Promise<void> {
     let msg: RawMessage;
     try {
       msg = JSON.parse(raw);
@@ -162,9 +164,9 @@ export class BridgePeer {
 
     // 对端的回复：完成对应的 pending Promise。
     if (msg.kind === 'response') {
-      const waiter = this.pending.get(msg.id);
+      const waiter = this._pending.get(msg.id);
       if (!waiter) return;
-      this.pending.delete(msg.id);
+      this._pending.delete(msg.id);
       clearTimeout(waiter.timer);
       if (msg.error) waiter.reject(new Error(msg.error));
       else waiter.resolve(msg.data ?? '');
@@ -173,11 +175,11 @@ export class BridgePeer {
 
     // 对端的请求：调用 handler 并回 response。
     let response: RawMessage;
-    if (!this.handler) {
+    if (!this._handler) {
       response = { id: msg.id, kind: 'response', error: 'No message handler registered' };
     } else {
       try {
-        const result = await this.handler(msg.data ?? '');
+        const result = await this._handler(msg.data ?? '');
         response = { id: msg.id, kind: 'response', data: result };
       } catch (err) {
         response = { id: msg.id, kind: 'response', error: (err as Error).message };
@@ -189,12 +191,12 @@ export class BridgePeer {
   protected socket?: BridgeSocket;
   protected connectId?: string;
 
-  private readonly timeout: number;
-  private pending = new Map<string, PendingResponse>();
-  private handler?: MessageHandler;
-  private connected = false;
-  private connectListeners: (() => void)[] = [];
-  private disconnectListeners: (() => void)[] = [];
+  private readonly _timeout: number;
+  private _pending = new Map<string, PendingResponse>();
+  private _handler?: MessageHandler;
+  private _connected = false;
+  private _connectListeners: (() => void)[] = [];
+  private _disconnectListeners: (() => void)[] = [];
 }
 
 type PendingResponse = {

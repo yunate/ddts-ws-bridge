@@ -13,9 +13,10 @@ user-invocable: true
 client/
 ├── index.html          # Vite 入口，引用 /src/main.ts
 ├── vite.config.ts      # dev 起 5173 并把 /bridge 代理到后端 3201；prod build → dist/
-├── src/main.ts         # 入口：connectBridge() + createApp(App).mount("#app")
-├── src/App.vue         # 根组件
-├── src/components/     # 组件（如 ChatRoom.vue）
+├── src/main.ts         # 入口：connectBridge() + createApp(App).use(router).mount("#app")
+├── src/App.vue         # 根组件（导航壳 + RouterView）
+├── src/pages/          # URL 页面 + 功能 tab 的两级注册表（registry + layout 组件）
+├── src/router/         # 按 pages 注册表构建路由表
 └── src/bridge/         # connect.ts 建链单例；remote_api / remote_router
 ```
 - 只在 `client/` 内工作；通过同源 `/bridge` 的 WebSocket 桥调后端，不硬编码后端地址（`resolveBridgeUrl()` 自适应）。dev 下 Vite 代理 `/bridge` 到后端 3201。
@@ -50,8 +51,8 @@ client/
 - 不要为未改动的代码添加注释或类型注解。
 - 修改文件前先读取并理解现有组件、样式约定与项目结构。
 - 不要在 `<template>` 中写复杂逻辑；抽取到 `computed` 或 composable。
-- 发起 RPC 统一走 `remote_api/` 封装的语义化函数（如 `sendChat`、`fetchHistory`），不在组件里直接拼 `send(...)`。
-- 订阅 server→client 推送经事件中心实例（如 `chatMessageCenter.registerEventHandler(key, handler)`，基于通用 `EventCenter<T>`），并在 `onUnmounted` 注销。
+- 发起 RPC 统一走 `remote_api/` 封装的语义化函数（如 `fetchXxx`、`submitXxx`），不在组件里直接拼 `send(...)`。
+- 订阅 server→client 推送经事件中心实例（基于通用 `EventCenter<T>` 的 `xxxCenter.registerEventHandler(key, handler)`），并在 `onUnmounted` 注销。
 
 ## 工作方式
 1. 先读取上下文（顶层 `client/AI_CONTEXT.md` 与相关模块的 `AI_CONTEXT.md`），再检索代码库了解现有组件、样式与约定。

@@ -8,8 +8,5 @@ export { WSServerBridgeListener, type WSServerBridgeListenerOptions } from './ws
 export { CreateWSClientPeer } from './wsClientPeer';
 export {
   BridgeRouter,
-  send,
-  type Request,
-  type Response,
   type Validator,
 } from './rpc';

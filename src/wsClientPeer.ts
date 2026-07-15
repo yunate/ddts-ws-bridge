@@ -15,25 +15,25 @@ class BrowserWebSocketBridge implements BridgeSocket {
     this._ws.close();
   }
 
-  on_message(handler: (data: string) => void): void {
+  onMessage(handler: (data: string) => void): void {
     this._ws.addEventListener('message', (ev) => {
       handler(typeof ev.data === 'string' ? ev.data : String(ev.data));
     });
   }
 
-  on_close(handler: () => void): void {
+  onClose(handler: () => void): void {
     this._ws.addEventListener('close', () => handler());
   }
 
-  on_connected(handler: () => void): void {
+  onConnected(handler: () => void): void {
     this._ws.addEventListener('open', () => handler());
   }
 
-  on_error(handler: (err: Error) => void): void {
+  onError(handler: (err: Error) => void): void {
     this._ws.addEventListener('error', () => handler(new Error('WebSocket 连接错误')));
   }
 
-  is_connected(): boolean {
+  isConnected(): boolean {
     return this._ws.readyState === WebSocket.OPEN;
   }
 

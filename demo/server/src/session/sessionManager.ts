@@ -2,8 +2,7 @@ import type { BridgePeer } from "../../../common/ws_bridge/peer";
 import { Session } from "./session";
 
 // 全局单例：登记所有活动连接（session），按 connectId 索引。
-// 参考 youtube_downloader 的 SessionManager：create / require / remove / disposeAll，
-// 另加 all() 供聊天广播遍历所有连接。
+// 提供 create / require / remove / disposeAll，另加 all() 供需要向所有连接广播时遍历。
 export class SessionManager {
   static getInstance(): SessionManager {
     SessionManager._instance ??= new SessionManager();
@@ -31,7 +30,7 @@ export class SessionManager {
     return session;
   }
 
-  // 当前所有活动 session 的快照（供广播遍历）。
+  // 当前所有活动 session 的快照（需要向所有连接广播时遍历）。
   all(): Session[] {
     return [...this._sessions.values()];
   }

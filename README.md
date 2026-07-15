@@ -1,6 +1,6 @@
 # ddts-ws-bridge
 
-对称式的 TypeScript WebSocket client/server bridge。server 与 client 共享同一套 `BridgePeer` 能力，双方都可以主动 `send()` 并 `await` 对端的回复（基于消息 id 配对的请求/响应模型），同时支持单向 `post()`。
+对称式的 TypeScript WebSocket client/server bridge。server 与 client 共享同一套 `BridgePeer` 能力，双方都可以主动 `send()` 并 `await` 对端的回复（基于消息 id 配对的请求/响应模型）。
 
 `BridgePeer` 只负责字符串收发，分包/解包（消息名 + JSON 序列化）由调用者自行实现。
 
@@ -23,7 +23,7 @@ const listener = new WSServerBridgeListener('ws://localhost:8080');
 
 listener.onConnection((peer) => {
   peer.onConnect(() => console.log('客户端已连接'));
-  peer.on_message((raw) => {
+  peer.onMessage((raw) => {
     const { name, body } = JSON.parse(raw);
     return JSON.stringify({ reply: `已收到: ${body.text}` });
   });
@@ -37,7 +37,7 @@ import { CreateWSClientPeer } from 'ddts-ws-bridge';
 
 const client = CreateWSClientPeer('ws://localhost:8080');
 
-await client.wait_for_connect();
+await client.waitForConnect();
 const resRaw = await client.send(
   JSON.stringify({ name: 'hello', body: { text: '你好 server' } }),
 );
@@ -51,12 +51,10 @@ console.log(JSON.parse(resRaw));
 | 方法 | 说明 |
 | --- | --- |
 | `send(data: string): Promise<string>` | 发送请求并等待对端回复 |
-| `send1<T>(body): Promise<T>` | 自动 JSON 序列化/反序列化的 `send` |
-| `post(raw: string): void` | 单向发送，不等待回复 |
-| `on_message(handler)` | 注册收到对端请求时的处理函数 |
+| `onMessage(handler)` | 注册收到对端请求时的处理函数 |
 | `onConnect(cb)` / `onDisconnect(cb)` | 连接/断开事件监听 |
-| `wait_for_connect()` / `wait_for_disconnect()` | 等待连接/断开 |
-| `isconnect(): boolean` | 当前是否已连接 |
+| `waitForConnect(timeout?)` / `waitForDisconnect()` | 等待连接/断开 |
+| `isConnected(): boolean` | 当前是否已连接 |
 | `close(): Promise<void>` | 关闭连接 |
 
 构造参数支持 `timeout`（请求超时，默认 30000ms）。

@@ -3,7 +3,8 @@
 //
 // CreateWSClientPeer 内部用 crypto.randomUUID() 生成 connectId 并 new WebSocket(url, connectId)
 //（子协议携带 connectId），server 据此建立单连接 session。send() 内部会先 await
-// wait_for_connect()，因此调用方无需等待连接建立即可发起 RPC（自动排队）。
+// waitForConnect(timeout)：连接建立前发起的 RPC 会自动排队等待，但受 timeout 约束——
+// 若在超时内仍未连上则该次调用 reject。
 import type { BridgePeer } from "../../../common/ws_bridge/peer";
 import { CreateWSClientPeer } from "../../../common/ws_bridge/wsClientPeer";
 import { BridgeRouter } from "../../../common/ws_bridge/rpc";
@@ -24,7 +25,7 @@ export function connectBridge(): BridgePeer {
   registerAllHandlers(router);
 
   const instance = CreateWSClientPeer(resolveBridgeUrl());
-  router.start_dispatch_message(instance);
+  router.startDispatchMessage(instance);
   bridge = instance;
   return bridge;
 }

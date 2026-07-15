@@ -3,7 +3,7 @@ name: bridge-core
 description: >
   核心传输层 BridgePeer（src/peer.ts）的设计与约定：对称式 client/server WebSocket bridge，
   双方共享同一套收发能力。适用于：修改或扩展 BridgePeer / WSServerBridgeListener /
-  CreateWSClientPeer，理解 id 配对的请求/响应模型（RawMessage）、send/send1/on_message、连接生命周期与
+  CreateWSClientPeer，理解 id 配对的请求/响应模型（RawMessage）、send/on_message、连接生命周期与
   等待、BridgeSocket 统一抽象接口（Node 'ws' 与浏览器 WebSocket 各自适配）、connectId 经 sec-websocket-protocol 传递、
   超时与断线时 pending 的清理。传输层只收发字符串，不感知业务语义。
 ---
@@ -35,7 +35,6 @@ description: >
 
 - **`send(data): Promise<string>`**：先 `wait_for_connect()`，生成 `id`，发出 `request` envelope，
   把 `{resolve, reject, timer}` 存入 `pending` Map，等对端回同 `id` 的 `response` 时兑现 Promise。
-- **`send1<T>(body): Promise<T>`**：`send` 的 JSON 便捷版——自动 `JSON.stringify` 入参、`JSON.parse` 回复。
 - **`on_message(handler)`**：注册收到对端 `request` 时的处理函数（`MessageHandler = (data) => string | Promise<string>`）；
   handler 返回值/抛错会被自动包成 `response`（`error` 取 `err.message`）回给对端。
 - **`_onmessage`（私有）**：解析 `RawMessage`；`response` → 兑现对应 pending；`request` → 调 handler 回 response；
@@ -71,12 +70,12 @@ description: >
 - **client**：`CreateWSClientPeer` 用 `crypto.randomUUID()` 生成 `connectId`，作为 `new WebSocket(url, connectId)` 的**子协议**（第二参）传出。
 - **server**：`WSServerBridgeListener` 从 `request.headers['sec-websocket-protocol']` 读回 `connectId`；
   **缺失/空则拒绝并 `socket.close()`**，不留悬挂连接。每条连接据此创建一个专属 `BridgePeer`。
-- `getConnectId()` 在未设置时抛错；RPC 层用它给 `Request` 打上来源标识。
+- `getConnectId()` 在未设置时抛错；RPC 层用它作为接收端权威身份（报文体不携带 connectId，身份一律用 `peer.getConnectId()`）。
 
 ## WSServerBridgeListener 约定
 
 - 构造时按 `url` 解析 host/port 建 `WebSocketServer`；若 `serverOptions.server`/`noServer` 存在，则**附着已有 http.Server 或交由调用者处理 upgrade**，此时不再自绑 host/port。
-- `onConnection(listener)`：每条新连接建立时回调，参数是该连接专属的 `BridgePeer`（可对其 `on_message` / `send1`）。
+- `onConnection(listener)`：每条新连接建立时回调，参数是该连接专属的 `BridgePeer`（可对其 `on_message` / `send`）。
 - `peerOptions`（除 `serverOptions` 外的 `PeerOptions`）透传给每个 `BridgePeer`。
 
 ## 常见坑
@@ -84,4 +83,4 @@ description: >
 - **`BridgeRouter` 是进程级单例**：单进程内同时跑 server+client 时，只让一端注册 handler + dispatch，另一端仅 `send`，避免单例冲突（详见 `bridge-rpc`）。
 - **不要在传输层 `JSON.parse` 业务体**：`peer.ts` 只解析 `RawMessage` 外壳；业务体的解析/校验在 RPC 层或调用方做。
 - **对称优先**：新增能力加在 `BridgePeer` 基类，让 server/client 两端都受益，而非单端重复实现。
-- **公有方法名是已发布契约**：`on_message`、`send1`、`wait_for_connect` 等 snake_case 名不可擅自改名（破坏性变更）。
+- **公有方法名是已发布契约**：`on_message`、`wait_for_connect` 等 snake_case 名不可擅自改名（破坏性变更）。

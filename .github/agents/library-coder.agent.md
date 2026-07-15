@@ -12,7 +12,7 @@ user-invocable: true
 **`demo/` 子项目有独立体系，不属本 agent 范围**——除非用户明确要求，否则不改 `demo/`。
 
 ## 适用技能（必读）
-- `bridge-core`：传输基类 `BridgePeer` 的对称设计、`RawMessage` id 配对请求/响应、`send`/`send1`/`on_message`、连接生命周期与等待、`BridgeSocket` 统一抽象（Node 'ws' 与浏览器 `WebSocket` 各自适配）、connectId 经 sec-websocket-protocol 传递、断线/超时的 pending 清理。
+- `bridge-core`：传输基类 `BridgePeer` 的对称设计、`RawMessage` id 配对请求/响应、`send`/`on_message`、连接生命周期与等待、`BridgeSocket` 统一抽象（Node 'ws' 与浏览器 `WebSocket` 各自适配）、connectId 经 sec-websocket-protocol 传递、断线/超时的 pending 清理。
 - `bridge-rpc`：`BridgeRouter`/`send`/`Validator` 结构化 RPC 层、`register_message_handler`、协议伴生对象校验器（`asserts value is T`）、`Response` 信封与受控错误文案策略、handler 首参 `peer`、`BridgeRouter` 进程级单例约束。
 - `typescript-strict`：严格类型与安全规则（禁 `any`、避免 `as`、`unknown` 优先、catch 收窄、`NoInfer`）。
 - `publish-npm-package`：改公开 API 后同步 `index.ts` barrel、`package.json` files/scripts、tsc 构建、语义化版本。
@@ -32,7 +32,7 @@ user-invocable: true
 - 修改文件前先读取并理解现有实现与项目约定。
 - **守住分层**：传输层（`peer.ts`）只做字符串收发 + id 配对，不感知 method/业务语义；结构化分发在 `rpc.ts`。不要把 RPC/业务语义泄漏进 `BridgePeer`。
 - **对称优先**：新增能力加在 `BridgePeer` 基类让 server/client 两端受益，而非单端重复。
-- **公开 API 是契约**：`on_message`/`send1`/`wait_for_connect` 等已发布 snake_case 名不可擅自改名（破坏性变更）；改公开 API 必同步 `src/index.ts` 与 `README.md`。
+- **公开 API 是契约**：`on_message`/`wait_for_connect` 等已发布 snake_case 名不可擅自改名（破坏性变更）；改公开 API 必同步 `src/index.ts` 与 `README.md`。
 
 ## 工作方式
 1. 先读 `AI_CONTEXT.md` 与相关技能，再检索代码了解现有类型、分层与约定。

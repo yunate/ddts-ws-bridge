@@ -1,10 +1,10 @@
 // demo 打包脚本：把 client(前端构建产物) + server(编译后的 JS) + common(共享层) + 生产依赖
 // 组装成自包含发行目录（dist-release/app），再用 Inno Setup 打成单个 setup.exe。
 //
-// 参考 F:\My\youtube_downloader\packager-installer\build-release.mjs，按 demo 的实际差异做了适配：
+// 关键约定：
 //   - demo 开发态用 ts-node 直跑 TS；发行态改为 tsc 预编译成 JS（tsconfig.release.json），
 //     产物为 CommonJS，node 直跑，无需 ts-node / 软链接 / --preserve-symlinks。
-//   - demo 不内置 node.exe：发行版启动器 demo-chat.bat 使用「系统已安装的 Node」运行。
+//   - demo 不内置 node.exe：发行版启动器 ws-bridge-demo.bat 使用「系统已安装的 Node」运行。
 //   - 端口由启动器动态挑选后经 PORT 环境变量传给 index.js（index.ts 已支持）。
 //
 // staging（app/）布局须与运行时路径推导一致：
@@ -13,8 +13,8 @@
 //   app/common/ws_bridge/wsServerPeer.js  ← require('ws') 时向上找 app/node_modules/ws
 //   app/client/dist/index.html            ← 静态托管根
 //   app/node_modules/ws                   ← 仅生产依赖
-//   app/data/                             ← 运行时数据（聊天历史 / runtime.json）
-//   app/demo-chat.bat                     ← 启动器（快捷方式指向它）
+//   app/data/                             ← 运行时数据（runtime.json 等）
+//   app/ws-bridge-demo.bat                ← 启动器（快捷方式指向它）
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { cp, mkdir, readFile, rm } from "node:fs/promises";
@@ -42,10 +42,10 @@ const stagingDir = path.join(releaseDir, "app");
 const depsTmpDir = path.join(releaseDir, ".deps-tmp");
 
 // 启动器模板与 Inno Setup 脚本随本脚本入库在 packager-installer/（可手改）。
-const launcherName = "demo-chat.bat";
+const launcherName = "ws-bridge-demo.bat";
 const launcherTemplate = path.join(scriptDir, launcherName);
-const issScript = path.join(scriptDir, "demo-chat.iss");
-const setupName = "demo-chat-setup";
+const issScript = path.join(scriptDir, "ws-bridge-demo.iss");
+const setupName = "ws-bridge-demo-setup";
 
 function log(message) {
   console.log(`[package] ${message}`);
@@ -145,7 +145,7 @@ async function assembleStaging() {
     path.join(stagingDir, "node_modules"),
     "node_modules (prod)",
   );
-  // 运行时按需写入的数据目录（聊天历史 / runtime.json）；发行时留空。
+  // 运行时按需写入的数据目录（runtime.json 等）；发行时留空。
   await mkdir(path.join(stagingDir, "data"), { recursive: true });
   await copyLauncher();
   await rm(depsTmpDir, { recursive: true, force: true });

@@ -14,7 +14,7 @@ demo/
 ├── server/        # TS 后端（Backend Coder/Reviewer 负责）
 │   └── src/         # index / app(http 静态) / bridge / session / lib
 ├── client/        # Vue 3 + Vite 前端（Frontend Coder/Reviewer 负责）
-│   ├── src/         # main.ts / App.vue / components / bridge
+│   ├── src/         # main.ts / App.vue / pages / router / bridge
 │   └── vite.config.ts  # dev 代理 /bridge 到后端；prod build → dist/
 ├── common/        # 前后端共享：ws_bridge（软链接到仓库 ../../src 的 bridge 库）+ protocol 契约 + validator
 └── start.bat / debug.bat  # 一键启动 / 带 inspector 调试
@@ -57,7 +57,7 @@ demo/
   - **该添加日志的地方要添加日志**：关键流程节点、外部命令/子进程调用、错误与失败分支、重要状态变迁等应打上恰当日志，便于排查；避免无信息量的噪音日志。
 
 ## 运行验证（交由用户）
-- **不要自行做联调/端到端运行验证**（不启动服务、不跑真实下载流程）；这类验证由用户自行完成。也不要要求审查者做联调验证。
+- **不要自行做联调/端到端运行验证**（不启动服务、不跑真实业务流程）；这类验证由用户自行完成。也不要要求审查者做联调验证。
 - 编写者可以跑 typecheck/build 以确认编译通过，但是否启动服务实际跑一遍交由用户决定。
 - 代码完成并通过审查后，在最终总结中简要告知用户如何自行验证（如启动命令、访问地址）。
 

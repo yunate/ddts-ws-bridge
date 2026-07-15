@@ -21,23 +21,23 @@ class NodeWebSocketBridge implements BridgeSocket {
     this._ws.close();
   }
 
-  on_message(handler: (data: string) => void): void {
+  onMessage(handler: (data: string) => void): void {
     this._ws.on('message', (data) => handler(data.toString()));
   }
 
-  on_close(handler: () => void): void {
+  onClose(handler: () => void): void {
     this._ws.on('close', () => handler());
   }
 
-  on_connected(handler: () => void): void {
+  onConnected(handler: () => void): void {
     this._ws.on('open', () => handler());
   }
 
-  on_error(handler: (err: Error) => void): void {
+  onError(handler: (err: Error) => void): void {
     this._ws.on('error', (err) => handler(err));
   }
 
-  is_connected(): boolean {
+  isConnected(): boolean {
     return this._ws.readyState === NodeWebSocket.OPEN;
   }
 
@@ -48,7 +48,10 @@ export class WSServerBridgeListener {
   constructor(url: string, options: WSServerBridgeListenerOptions = {}) {
     const { serverOptions, ...peerOptions } = options;
     this._peerOptions = peerOptions;
-    const so = serverOptions ?? {};
+    const so: Omit<ServerOptions, 'host' | 'port'> = {
+      handleProtocols: WSServerBridgeListener._selectConnectIdProtocol,
+      ...serverOptions,
+    };
     if (so.server || so.noServer) {
       // 附着到已有的 http.Server，或交由调用者处理 upgrade（noServer）；
       // 这两种情况下不再自行绑定 host/port。
@@ -91,6 +94,14 @@ export class WSServerBridgeListener {
     const peer = new BridgePeer(options);
     peer.setSocket(new NodeWebSocketBridge(socket), connectId);
     return peer;
+  }
+
+  // 回选第一个子协议：隐含假设 client（wsClientPeer.ts）用 `new WebSocket(url, connectId)`
+  // 只发单个子协议（即那串 connectId），故原样回选第一个即回选该 connectId。
+  // 若未来 client 改为发多个子协议，此处需重新考虑选择策略。
+  private static _selectConnectIdProtocol(protocols: Set<string>): string | false {
+    for (const protocol of protocols) return protocol;
+    return false;
   }
 
   readonly wss: WebSocketServer;

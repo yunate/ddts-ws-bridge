@@ -23,7 +23,7 @@ description: >
 ## 对外入口：index.ts（barrel）
 
 `src/index.ts` 是**唯一公开 API 入口**，re-export 全部对外类型与函数：
-`BridgePeer`/`BridgeSocket`/`PeerOptions`/`MessageHandler`（peer）、`WSServerBridgeListener`/`WSServerBridgeListenerOptions`（wsServerPeer）、`CreateWSClientPeer`（wsClientPeer）、`BridgeRouter`/`send`/`Request`/`Response`/`Validator`（rpc）。
+`BridgePeer`/`BridgeSocket`/`PeerOptions`/`MessageHandler`（peer）、`WSServerBridgeListener`/`WSServerBridgeListenerOptions`（wsServerPeer）、`CreateWSClientPeer`（wsClientPeer）、`BridgeRouter`/`send`/`Validator`（rpc）。
 
 - **新增/删除公开 API 必须同步改 `index.ts`**：只在 `index.ts` 导出的才是对外契约；未导出的属内部实现，可自由改。
 - 类型用 `export { type X }` 形式导出（与现有写法一致）。
@@ -40,7 +40,7 @@ description: >
 
 1. 改动公开 API 时先同步 `src/index.ts` barrel 与 `README.md` 的 API 概览。
 2. 语义化版本 bump `package.json` 的 `version`：
-   - **破坏性变更**（改公有方法名/签名、删导出——注意 `on_message`/`send1`/`wait_for_connect` 等 snake_case 名是已发布契约）→ major。
+   - **破坏性变更**（改公有方法名/签名、删导出——注意 `on_message`/`wait_for_connect` 等 snake_case 名是已发布契约）→ major。
    - 向后兼容的新功能 → minor；修 bug → patch。可用 `npm version <patch|minor|major>`。
 3. `npm run build` 确认无类型错误、`dist/` 产出 `.js` + `.d.ts`。
 4. `npm publish`（`prepublishOnly` 会自动先 build）。发布是不可逆动作，**执行前与用户确认**。

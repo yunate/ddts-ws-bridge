@@ -10,20 +10,20 @@
   #define AppVer "1.0.0"
 #endif
 
-#define AppName "WS Bridge Demo Chat"
+#define AppName "WS Bridge Demo"
 #define AppPublisher "ddts-ws-bridge"
-#define LauncherBat "demo-chat.bat"
+#define LauncherBat "ws-bridge-demo.bat"
 
 [Setup]
 AppName={#AppName}
 AppVersion={#AppVer}
 AppPublisher={#AppPublisher}
 ; 默认装到用户目录，免管理员权限（无需写 Program Files）。
-DefaultDirName={localappdata}\WsBridgeDemoChat
+DefaultDirName={localappdata}\WsBridgeDemo
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
-OutputBaseFilename=demo-chat-setup
+OutputBaseFilename=ws-bridge-demo-setup
 Compression=lzma2/max
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -44,5 +44,5 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#LauncherBat}"; WorkingDir: 
 [Run]
 Filename: "{app}\{#LauncherBat}"; Description: "{cm:LaunchProgram,{#AppName}}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent shellexec
 
-; 卸载只删安装时写入的文件。运行时生成的用户数据（data\ 下的聊天历史 history.json、
-; runtime.json）不在 [Files] 里，故卸载保留；这些非空目录也不会被清空。
+; 卸载只删安装时写入的文件。运行时生成的用户数据（data\ 下的 runtime.json 等）
+; 不在 [Files] 里，故卸载保留；这些非空目录也不会被清空。

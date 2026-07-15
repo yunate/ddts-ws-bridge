@@ -23,7 +23,7 @@ async function main() {
     conn.onDisconnect(() => console.log('[server] 客户端断开'));
 
     // 调用者负责解包：自行根据 name 分发并序列化结果。
-    conn.on_message((raw) => {
+    conn.onMessage((raw) => {
       const { name, body } = JSON.parse(raw);
       console.log('[server] 收到:', name, body);
       return JSON.stringify({ reply: `服务端已收到: ${body.text}` });
@@ -33,14 +33,14 @@ async function main() {
   // ---- 客户端 ----
   const client = CreateWSClientPeer(url);
 
-  client.on_message((raw) => {
+  client.onMessage((raw) => {
     const { name, body } = JSON.parse(raw);
     console.log('[client] 收到服务端推送:', name, body);
     return JSON.stringify({ pong: true });
   });
 
-  await client.wait_for_connect();
-  console.log('[client] 是否已连接:', client.isconnect());
+  await client.waitForConnect();
+  console.log('[client] 是否已连接:', client.isConnected());
 
   // const res = await client.send(data)
   const resRaw = await client.send(

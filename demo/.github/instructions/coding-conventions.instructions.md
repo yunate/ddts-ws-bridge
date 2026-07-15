@@ -6,20 +6,25 @@ applyTo: "**/*.ts,**/*.vue"
 
 本规范为全项目（`client/`、`common/`、`server/`）单一事实来源。编写者须遵循，审查者须把以下各条作为审查项。
 
+## 标点规范（强制）
+- 所有产出文件 (代码注释, 文档, `package.json` 的 description, `.github/` 下的 agent / skill / rules 文件等) **一律使用英文半角标点** (`,` `.` `:` `;` `()` `""` `!` `?`)。
+- 禁止出现中文全角标点 (`，` `。` `：` `；` `（）` `「」` `、` `！` `？`)。
+- 审查者须把此项作为审查项；本条自身即用英文标点书写, 新增/改写内容保持一致。
+
 ## 命名规范
-- **函数 / 方法**：使用「动词 + 名词」风格，名称体现其行为（如 `sendChat`、`createSession`、`appendMessage`、`resolveBridgeUrl`、`registerChatRouter`）；布尔返回值用 `is/has/should/can` 前缀（如 `isconnect`、`hasTask`）；事件处理器用 `on/handle` 前缀（如 `onConnect`、`onDeliver`）。
+- **函数 / 方法**：使用「动词 + 名词」风格，名称体现其行为（如 `createSession`、`resolveBridgeUrl`、`connectBridge`、`registerPage`、`registerAllHandlers`）；布尔返回值用 `is/has/should/can` 前缀（如 `isConnected`、`hasFeature`）；事件处理器用 `on/handle` 前缀（如 `onConnection`、`onDisconnect`、`onSelect`）。
 - **大小写约定**：
   - 变量 / 函数 / 方法 → `camelCase`。
   - 类型 / 接口 / 类 / Vue 组件 → `PascalCase`。
-  - 方法名常量 / 枚举值 → `UPPER_SNAKE_CASE`（如 `CHAT_SEND`、`CHAT_DELIVER`），并保持全项目一致。
+  - 方法名常量 / 枚举值 → `UPPER_SNAKE_CASE`（如 `FOO_METHOD`、`PING_METHOD`），并保持全项目一致。
 - 命名应**清晰、可读、表达意图**，避免无意义缩写与含糊命名（如 `data`、`tmp`、`foo`）；同一概念在前后端及 `common/` 协议层使用**同一命名**，保持术语一致。
 - 新代码须与所在模块**既有命名风格保持一致**；若发现既有命名不一致，在改动范围内对齐。
 
 ## 文件命名规范
-- **TS 源文件**（`.ts`）→ `camelCase`，文件名通常等于其主要导出（如 `sessionManager.ts`、`directoryManager.ts`、`chatStore.ts`、`chatRouter.ts`、`chatApi.ts`、`eventCenter.ts`）。
-- **Vue 组件**（`.vue`）→ `PascalCase`，与组件名一致（如 `App.vue`、`ChatRoom.vue`）。
+- **TS 源文件**（`.ts`）→ `camelCase`，文件名通常等于其主要导出（如 `sessionManager.ts`、`directoryManager.ts`、`registry.ts`、`connect.ts`、`handlers.ts`）。
+- **Vue 组件**（`.vue`）→ `PascalCase`，与组件名一致（如 `App.vue`、`MainPage.vue`、`FeatureLayout.vue`）。
 - **Composable**（组合式函数）→ `useXxx.ts` 前缀约定。
-- **`common/protocol/` 协议文件** → 以资源域小写命名（如 `chat.ts`），与协议域对应。
+- **`common/protocol/` 协议文件** → 以资源域小写命名（如 `foo.ts`），与协议域对应。
 - **聚合入口** → `remote_router/handlers.ts`（汇总各 `registerXxxRouter`）；`remote_api/` 每域一个文件。
 - **目录名** → `remote_api`、`remote_router`、`ws_bridge` 沿用 snake_case；`session`、`lib`、`bridge`、`components` 沿用小写；不要在同一层混用风格。
 - 文件名应表达其内容/职责，避免 `util.ts`、`misc.ts`、`temp.ts` 等含糊名；新文件须与**同目录既有文件风格保持一致**。
@@ -40,7 +45,7 @@ applyTo: "**/*.ts,**/*.vue"
   - 多个分支 / 任务共享相同流程骨架——提炼公共基类、辅助函数或组合式函数（前端 composable）。
   - 前后端共用的数据结构与流程——沉淀到 `common/` 协议层统一定义。
 - 抽象要**适度**：避免过度设计（不要为一次性逻辑造无谓的抽象层、不为臆测的未来需求预留扩展点）。在「重复堆叠」与「过度抽象」之间取平衡，优先服务当前可读性与可维护性。
-- **优先面向对象**：当一组函数与其共享状态/配置紧密相关时，优先封装为类（把相关行为与私有状态聚合、隐藏内部细节），而非散落的模块级函数 + 模块级可变状态；有状态的服务/管理器用类建模，对外按需以单例实例导出（如 `SessionManager`、`DirectoryManager`、`ChatStore`）。但**不要教条**——纯无状态的工具函数（如格式化、纯计算）保持函数即可，不必强行包类。
+- **优先面向对象**：当一组函数与其共享状态/配置紧密相关时，优先封装为类（把相关行为与私有状态聚合、隐藏内部细节），而非散落的模块级函数 + 模块级可变状态；有状态的服务/管理器用类建模，对外按需以单例实例导出（如 `SessionManager`、`DirectoryManager`、`PageRegistry`）。但**不要教条**——纯无状态的工具函数（如格式化、纯计算）保持函数即可，不必强行包类。
 
 ## 注释规范
 - **不写无用注释**：注释只解释「为什么 / 不显然的意图 / 重要约束与坑」，不复述代码已清晰表达的内容（如 `// 把 a 赋值给 b`、`// 循环遍历列表`）。

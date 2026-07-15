@@ -27,7 +27,7 @@ export function startBridge(server: http.Server): BridgeHandle {
       return;
     }
     console.log(`[server] ${session.name} 已连接`);
-    router.start_dispatch_message(bridge);
+    router.startDispatchMessage(bridge);
     bridge.onDisconnect(() => {
       console.log(`[server] ${session.name} 断开`);
       SessionManager.getInstance().remove(session);
