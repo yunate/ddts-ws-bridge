@@ -59,6 +59,42 @@ console.log(JSON.parse(resRaw));
 
 构造参数支持 `timeout`（请求超时，默认 30000ms）。
 
+## 类对象 RPC
+
+服务端可注册对象工厂，客户端按全局唯一的 `registerName` 创建远端对象代理。注册名称推荐使用点分命名空间，例如 `service.counter`。每个连接创建的对象彼此隔离，并在连接断开后释放。
+
+```ts
+interface Counter {
+  add(value: number): number;
+  getValue(): number;
+}
+
+class CounterService implements Counter {
+  private value = 0;
+
+  add(value: number): number {
+    this.value += value;
+    return this.value;
+  }
+
+  getValue(): number {
+    return this.value;
+  }
+}
+
+// server
+const router = BridgeRouter.GetRouter();
+router.registerRemoteObj('service.counter', () => new CounterService());
+listener.onConnection((peer) => router.startDispatchMessage(peer));
+
+// client
+const counter = await BridgeRouter.createRemoteObj<Counter>(client, 'service.counter');
+console.log(await counter.add(2));
+await BridgeRouter.destroyRemoteObj(counter);
+```
+
+远端方法总是异步执行。`createRemoteObj<T>` 返回的 `RemoteObject<T>` 会保留方法参数类型，并把方法结果自动映射为 `Promise<Awaited<TResult>>`。对象字段不会暴露为远端 API。不再使用代理时调用 `destroyRemoteObj()`，服务端会删除对应实例，代理后续调用会被拒绝；已经在服务端开始执行的方法不会被取消。连接断开时服务端仍会清理该连接的全部对象。
+
 ## 本地开发
 
 ```bash

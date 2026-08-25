@@ -49,8 +49,8 @@ server/src/
 
 ## 工作方式
 1. 先读取上下文（顶层 `server/AI_CONTEXT.md` 与相关模块的 `AI_CONTEXT.md`），再检索代码库了解现有 remote_router/remote_api、session、lib 与依赖。
-2. 新增 RPC 方法时严格按 `add-remote-api` 技能：protocol 定义方法名常量 + Params/Result 类型及同名 `validate` 伴生对象；handler 首参为 `peer: BridgePeer`；在 `registerXxxRouter` 注册并在 `handlers.ts` 聚合。
-3. 入站参数校验由桥层 `dispatch` 自动调 `validate` 完成（基于 `common/validator.ts` 的 `Validate` 原语）；handler 只做编排，业务逻辑下沉到 `session` / `lib`。
+2. 新增 RPC 方法时严格按 `add-remote-api` 技能：protocol 定义方法名常量、Params/Result 类型及普通断言函数；handler 首参为 `peer: BridgePeer`；在 `registerXxxRouter` 注册并在 `handlers.ts` 聚合。
+3. 入站参数由 handler 在使用前校验；出站返回值由 caller 在使用前校验。校验函数复用 `common/validator.ts` 的 `Validate` 原语，业务逻辑下沉到 `session` / `lib`。
 4. 复用共享契约（`common/protocol/`）保证前后端类型一致；方法名只从 protocol 常量 import，不各写字符串。
 5. 改动后运行类型检查（`npm --prefix server run typecheck`），先诊断再修复。
 6. 完成后回写上下文：更新模块 `AI_CONTEXT.md` 与顶层 `server/AI_CONTEXT.md`。

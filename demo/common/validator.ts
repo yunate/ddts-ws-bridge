@@ -3,8 +3,7 @@
 // 约定：
 //   - ensure* 断言：失败抛 Error（受控中文文案，经 dispatch 的 params 分支可达前端），通过后收窄类型（asserts）。
 //   - is(ensureFn, value)：通用桥，用 try/catch 把任意 ensure* 断言派生为「非抛错布尔」。
-// 命名：本类名 Validate 刻意区别于 ws_bridge/rpc 的 `Validator<T>` 接口（协议伴生对象的
-//   校验器接口），二者是不同概念，避免同名导入冲突。调用方统一 `Validate.xxx(...)`。
+// 调用方统一使用 `Validate.xxx(...)` 组合自己的断言函数。
 
 export class Validate {
   // 由「抛错校验」派生「非抛错布尔」的通用桥：assertFn 通过返回 true，抛出（校验失败）返回 false。

@@ -122,10 +122,10 @@ demo 由两部分组成 —— **架构层** (bridge 传输/RPC + 各 xxManager 
 
 1. **对称双向 RPC**: `client -> server` 与 `server -> client` 都是 RPC. 每一侧新增一个方法时,
    **发起方**写 `remote_api/` (封装 `BridgeRouter.send`), **处理方**写 `remote_router/`
-   (`register_message_handler`, 由 `handlers.ts` 聚合). 初始骨架里 `remote_api/` 尚不存在,
+  (`registerMessageHandler`, 由 `handlers.ts` 聚合). 初始骨架里 `remote_api/` 尚不存在,
    两侧只有空的 `remote_router/handlers.ts`; 新增方法照 `add-remote-api` skill 落地.
 2. **协议契约集中在 `common/protocol/`**: 每个 method 导出 `方法名常量` + `Params/Result` 接口
-   + **同名伴生校验器** (`Validator<T>`, `asserts` 断言签名). client 与 server 引用同一份, 杜绝漂移.
+  + 普通断言函数 (`asserts value is T`). handler 校验入参, caller 校验返回值; client 与 server 引用同一份, 杜绝漂移.
    初始 `protocol/` 为空目录.
 3. **HTTP 与 WebSocket 共用同一端口**: `WSServerBridgeListener` 直接挂到已有 `http.Server`
    (`serverOptions: { server, path: "/bridge" }`).
@@ -153,7 +153,7 @@ demo 由两部分组成 —— **架构层** (bridge 传输/RPC + 各 xxManager 
 ## bridge 库源码 (直接复制, 不用 npm 包)
 
 bridge 库提供 `BridgePeer` / `WSServerBridgeListener` / `CreateWSClientPeer`
-/ `BridgeRouter` / `Validator`. **不引用任何 npm 包, 直接把这些源码文件复制进项目**:
+/ `BridgeRouter`. **不引用任何 npm 包, 直接把这些源码文件复制进项目**:
 
 - 把 bridge 库的 `.ts` 源码 (`peer.ts` / `wsServerPeer.ts` / `wsClientPeer.ts` / `rpc.ts` /
   `index.ts` 等) 作为**真实文件**复制到 `common/ws_bridge/` (demo 中该目录是软链接, 复刻时

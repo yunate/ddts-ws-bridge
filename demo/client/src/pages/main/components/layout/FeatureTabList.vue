@@ -80,4 +80,25 @@ const pinnedFirstId = computed(() => bottomFeatures.value[0]?.id);
   background: var(--color-surface-raised);
   box-shadow: inset 3px 0 0 var(--color-primary);
 }
+
+@media (max-width: 640px) {
+  .feature-tabs {
+    flex-direction: row;
+    height: auto;
+    overflow-x: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .feature-tabs__item,
+  .feature-tabs__item.is-pinned-first {
+    flex: none;
+    margin-top: 0;
+    white-space: nowrap;
+  }
+
+  .feature-tabs__item.is-active {
+    box-shadow: inset 0 -3px 0 var(--color-primary);
+  }
+}
 </style>

@@ -2,7 +2,9 @@
 // 在此追加一行 import + registerFeature 即可。
 import { featureRegistry } from "./registry";
 import { aboutFeature } from "./about";
+import { remoteCounterFeature } from "./remoteCounter";
 import { userCenterFeature } from "./userCenter";
 
 featureRegistry.registerFeature(aboutFeature);
+featureRegistry.registerFeature(remoteCounterFeature);
 featureRegistry.registerFeature(userCenterFeature);

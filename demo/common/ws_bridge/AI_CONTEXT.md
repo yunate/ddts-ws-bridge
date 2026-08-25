@@ -15,7 +15,7 @@
 
 公开 API 由 [`index.ts`](index.ts) barrel 导出：`BridgePeer`、`BridgeSocket`、`PeerOptions`、
 `MessageHandler`、`WSServerBridgeListener`、`WSServerBridgeListenerOptions`、`CreateWSClientPeer`、
-`BridgeRouter`、`Validator`。
+`BridgeRouter`、`RemoteObject`、`RemoteObjectCreator`、`RpcHandler`。
 
 ## 关键设计与语义
 
@@ -33,9 +33,14 @@
   避免严格 client 因 server 未回选而中断）；缺失 connectId 的连接直接关闭，不留悬挂。`getConnectId()` 读取。
 - **`BridgeRouter` 进程级单例**（`GetRouter()`）：单进程内只应一端注册 handler + `startDispatchMessage`，
   另一端仅 `send`，避免单例冲突（见 rpcExample）。
-- **双向校验（谁接收不可信数据谁校验）**：入站 params 由 dispatch 端用 `Validator` 校验；对端返回的 result
-  由发起端 `BridgeRouter.send` 用传入的 `resultValidator` 校验。`Request`/`Response` 信封本身也在边界校验。
+- **双向校验（谁接收不可信数据谁校验）**：server handler 在使用入站 params 前按需校验，client 调用方在使用 result 前按需校验。
+  `BridgeRouter` 只在消费处直接检查 `Request`/`Response` 信封与内置远端对象参数，不提供校验器抽象。
 - **错误策略**：入站可控错误回 `err.message`；非法 JSON / 缺字段的入站消息静默忽略、不崩溃；不把内部堆栈泄给对端。
+- **类对象 RPC**：server 用 `registerRemoteObj(registerName, creator)` 注册工厂，client 用
+  `createRemoteObj<T>(peer, registerName)` 获取代理；`registerName` 使用全局唯一的点分命名空间。对象实例按 `BridgePeer` 隔离并在断线时释放；代理仅暴露方法，
+  `RemoteObject<T>` 保留参数类型并把返回类型映射为 `Promise<Awaited<TResult>>`。client 用
+  `destroyRemoteObj(proxy)` 显式请求删除 server 实例；删除后继续调用或重复删除均由 server 的对象存在性检查拒绝。已经在 server
+  开始执行的方法不会被取消，可能在 destroy 完成后才返回。
 
 ## 命名约定（现状）
 

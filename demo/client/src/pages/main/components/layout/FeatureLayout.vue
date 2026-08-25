@@ -62,4 +62,15 @@ function onSelect(id: string): void {
 .feature-panel__empty {
   color: var(--color-text-muted);
 }
+
+@media (max-width: 640px) {
+  .feature-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .feature-panel {
+    padding: var(--space-4);
+  }
+}
 </style>
