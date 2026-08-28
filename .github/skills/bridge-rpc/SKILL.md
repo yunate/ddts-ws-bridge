@@ -17,7 +17,7 @@ RPC 层（`src/rpc.ts`）在传输基类 `BridgePeer`（见 `bridge-core` 技能
 | 导出（`src/rpc.ts`） | 角色 |
 | --- | --- |
 | `BridgeRouter.send<TResult, TParams>(caller, method, params, resultValidator)` | **发起方**：类型化出站调用，自动解包 `Response`，用 `resultValidator` 校验对端返回，失败 `throw` |
-| `BridgeRouter`（`GetRouter()` 单例） | **处理方**：注册 handler、接管入站消息、dispatch |
+| `BridgeRouter`（`getRouter()` 单例） | **处理方**：注册 handler、接管入站消息、dispatch |
 | `Request<T>` / `Response<T>` | 线上消息形状：`{ method, params }` / `{ ok:true,data } \| { ok:false,error }` |
 | `Validator<T>` | 运行时校验器接口：`validate(value): asserts value is T`（协议伴生对象实现） |
 
@@ -38,7 +38,7 @@ await BridgeRouter.send(peer, 'sys.ping', null, null);
 ## 注册 handler：BridgeRouter
 
 ```ts
-const router = BridgeRouter.GetRouter();               // 进程级单例
+const router = BridgeRouter.getRouter();               // 进程级单例
 router.register_message_handler<AddParams, AddResult>(
   'math.add',
   (peer, { a, b }) => ({ sum: a + b }),                // handler 首参恒为 peer
@@ -96,6 +96,6 @@ const AddParams: Validator<AddParams> = {
 
 ## 单例约束（常见坑）
 
-`BridgeRouter` 是**进程级单例**（`GetRouter()`）。单进程内同时跑 server 与 client（如 `rpcExample.ts`）时，
+`BridgeRouter` 是**进程级单例**（`getRouter()`）。单进程内同时跑 server 与 client（如 `rpcExample.ts`）时，
 **只让 server 端注册 handler 并 `start_dispatch_message`，client 端仅用 `BridgeRouter.send` 主动调用**，避免两端共享同一 router 造成注册冲突。
 真实分布式部署（server、client 各自进程）无此问题。

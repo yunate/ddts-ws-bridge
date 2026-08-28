@@ -72,7 +72,7 @@ async function main() {
   const url = 'ws://localhost:8081';
 
   // ---- 服务端：注册结构化 handler，在使用入参前校验 ----
-  const router = BridgeRouter.GetRouter();
+  const router = BridgeRouter.getRouter();
   router.registerMessageHandler(
     ADD_METHOD,
     (_peer, ...params) => {

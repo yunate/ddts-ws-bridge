@@ -2,7 +2,9 @@
 // 汇总注册到同一个 BridgeRouter 实例。新增协议：在对应文件写 registerXxxRouter，再在此调用。
 import type { BridgeRouter } from "../../../../common/ws_bridge/rpc";
 import { registerRemoteCounter } from "./remoteCounter";
+import { registerRemoteHierarchy } from "./remoteHierarchy";
 
 export function registerAllHandlers(router: BridgeRouter): void {
   registerRemoteCounter(router);
+  registerRemoteHierarchy(router);
 }

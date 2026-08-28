@@ -12,7 +12,7 @@ export interface BridgeHandle {
 // 每条连接建立 → SessionManager.create(bridge) 登记 session → router 接管入站 RPC；
 // connectId 冲突（create 返回 null）时关闭该连接。断开时 remove(session)。
 export function startBridge(server: http.Server): BridgeHandle {
-  const router = BridgeRouter.GetRouter();
+  const router = BridgeRouter.getRouter();
   registerAllHandlers(router);
 
   const listener = new WSServerBridgeListener("ws://localhost/bridge", {

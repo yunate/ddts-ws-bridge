@@ -21,7 +21,7 @@ let bridge: BridgePeer | null = null;
 export function connectBridge(): BridgePeer {
   if (bridge) return bridge;
 
-  const router = BridgeRouter.GetRouter();
+  const router = BridgeRouter.getRouter();
   registerAllHandlers(router);
 
   const instance = CreateWSClientPeer(resolveBridgeUrl());

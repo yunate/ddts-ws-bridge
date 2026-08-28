@@ -3,8 +3,10 @@
 import { featureRegistry } from "./registry";
 import { aboutFeature } from "./about";
 import { remoteCounterFeature } from "./remoteCounter";
+import { remoteHierarchyFeature } from "./remoteHierarchy";
 import { userCenterFeature } from "./userCenter";
 
 featureRegistry.registerFeature(aboutFeature);
 featureRegistry.registerFeature(remoteCounterFeature);
+featureRegistry.registerFeature(remoteHierarchyFeature);
 featureRegistry.registerFeature(userCenterFeature);

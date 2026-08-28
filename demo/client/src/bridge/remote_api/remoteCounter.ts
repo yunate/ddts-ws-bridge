@@ -6,6 +6,6 @@ export function createRemoteCounter(): Promise<RemoteObject<RemoteCounter>> {
   return BridgeRouter.createRemoteObj<RemoteCounter>(getBridge(), REMOTE_COUNTER_REGISTER_NAME);
 }
 
-export function destroyRemoteCounter(counter: RemoteObject<RemoteCounter>): Promise<void> {
+export function destroyRemoteCounter(counter: RemoteObject<RemoteCounter>): Promise<boolean> {
   return BridgeRouter.destroyRemoteObj(counter);
 }

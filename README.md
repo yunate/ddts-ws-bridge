@@ -83,7 +83,7 @@ class CounterService implements Counter {
 }
 
 // server
-const router = BridgeRouter.GetRouter();
+const router = BridgeRouter.getRouter();
 router.registerRemoteObj('service.counter', () => new CounterService());
 listener.onConnection((peer) => router.startDispatchMessage(peer));
 
@@ -93,7 +93,29 @@ console.log(await counter.add(2));
 await BridgeRouter.destroyRemoteObj(counter);
 ```
 
-远端方法总是异步执行。`createRemoteObj<T>` 返回的 `RemoteObject<T>` 会保留方法参数类型，并把方法结果自动映射为 `Promise<Awaited<TResult>>`。对象字段不会暴露为远端 API。不再使用代理时调用 `destroyRemoteObj()`，服务端会删除对应实例，代理后续调用会被拒绝；已经在服务端开始执行的方法不会被取消。连接断开时服务端仍会清理该连接的全部对象。
+远端方法总是异步执行。`createRemoteObj<T>` 返回的 `RemoteObject<T>` 会保留方法参数类型，并把普通方法结果自动映射为 `Promise<Awaited<TResult>>`。对象字段可以继续访问其嵌套方法。普通对象返回值按 JSON 传输；若方法需要返回一个可继续调用的远端对象，协议仍声明原始对象类型，服务端通过 `BridgeRouter.returnRemoteObj(object)` 给原对象注入非序列化标记并原样返回：
+
+```ts
+interface Son {
+  func1(): void;
+}
+
+interface Parent {
+  getSon(): Son;
+}
+
+// server
+getSon(): Son {
+  return BridgeRouter.returnRemoteObj(this.son);
+}
+
+// client
+const son = await parent.getSon();
+await son.func1();
+await BridgeRouter.destroyRemoteObj(son);
+```
+
+不再使用任何远端代理时调用 `destroyRemoteObj()`，服务端会删除对应实例，代理后续调用会在本地被拒绝；已经在服务端开始执行的方法不会被取消。嵌套成员代理与其根代理共享同一个远端实例，销毁任意一个都会使同根代理全部失效。由方法返回的远端代理拥有独立引用，需要单独销毁。连接断开时服务端仍会清理该连接的全部对象。
 
 ## 本地开发
 

@@ -129,7 +129,7 @@ demo 由两部分组成 —— **架构层** (bridge 传输/RPC + 各 xxManager 
    初始 `protocol/` 为空目录.
 3. **HTTP 与 WebSocket 共用同一端口**: `WSServerBridgeListener` 直接挂到已有 `http.Server`
    (`serverOptions: { server, path: "/bridge" }`).
-4. **BridgeRouter 进程级单例**: 用 `BridgeRouter.GetRouter()` 取, 注册一次 handler,
+4. **BridgeRouter 进程级单例**: 用 `BridgeRouter.getRouter()` 取, 注册一次 handler,
    每条连接 `router.startDispatchMessage(peer)`.
 5. **connectId 一连接一 session**: client 端 `CreateWSClientPeer` 自动生成 connectId;
    server 端 `SessionManager` 据此建立 / 查找 session; `getSession(peer)` 是各 handler 统一入口.
@@ -213,7 +213,7 @@ init 项目时**必须**把 `demo/.github/` 下的协作文件一并复制并改
 - [ ] 架构层目录结构与 demo 一致: 三层 + 每侧 `remote_router/handlers.ts` 空聚合入口就位.
 - [ ] `common/protocol/` 目录已就位 (初始为空; 若已加 method, 每个都有 `方法名常量 + Params/Result 类型 + 伴生校验器`, 两端引用同一份).
 - [ ] bridge 源码已作为实体文件复制进 `common/ws_bridge/`; 全项目无 `preserveSymlinks` 且不引用 npm 包.
-- [ ] `BridgeRouter.GetRouter()` 单例; `SessionManager` / `DirectoryManager` 单例就位; HTTP 与 WebSocket 共用同一端口.
+- [ ] `BridgeRouter.getRouter()` 单例; `SessionManager` / `DirectoryManager` 单例就位; HTTP 与 WebSocket 共用同一端口.
 - [ ] server 只绑 `127.0.0.1`; 静态服务防目录穿越; `.gitignore` 已就位.
 - [ ] `packager-installer/` 与 `package.bat` 已就位, 能打出单个 `setup.exe`.
 - [ ] `.github/` 下 instructions / skills / agents 等 md 文件已复制并改写, 且保留 "统一用英文标点" 规则.

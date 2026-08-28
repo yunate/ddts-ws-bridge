@@ -31,16 +31,16 @@
   `handleProtocols` 原样回选第一个子协议（隐含假设 client 仅发单个 connectId 子协议，故第一个即该 connectId），
   使握手响应带上 `Sec-WebSocket-Protocol` 头（符合 RFC6455 对称握手，
   避免严格 client 因 server 未回选而中断）；缺失 connectId 的连接直接关闭，不留悬挂。`getConnectId()` 读取。
-- **`BridgeRouter` 进程级单例**（`GetRouter()`）：单进程内只应一端注册 handler + `startDispatchMessage`，
+- **`BridgeRouter` 进程级单例**（`getRouter()`）：单进程内只应一端注册 handler + `startDispatchMessage`，
   另一端仅 `send`，避免单例冲突（见 rpcExample）。
 - **双向校验（谁接收不可信数据谁校验）**：server handler 在使用入站 params 前按需校验，client 调用方在使用 result 前按需校验。
   `BridgeRouter` 只在消费处直接检查 `Request`/`Response` 信封与内置远端对象参数，不提供校验器抽象。
 - **错误策略**：入站可控错误回 `err.message`；非法 JSON / 缺字段的入站消息静默忽略、不崩溃；不把内部堆栈泄给对端。
 - **类对象 RPC**：server 用 `registerRemoteObj(registerName, creator)` 注册工厂，client 用
   `createRemoteObj<T>(peer, registerName)` 获取代理；`registerName` 使用全局唯一的点分命名空间。对象实例按 `BridgePeer` 隔离并在断线时释放；代理仅暴露方法，
-  `RemoteObject<T>` 保留参数类型并把返回类型映射为 `Promise<Awaited<TResult>>`。client 用
-  `destroyRemoteObj(proxy)` 显式请求删除 server 实例；删除后继续调用或重复删除均由 server 的对象存在性检查拒绝。已经在 server
-  开始执行的方法不会被取消，可能在 destroy 完成后才返回。
+  `RemoteObject<T>` 递归保留嵌套对象的方法和参数类型。普通对象结果按 JSON 返回；需要把方法结果作为新远端对象继续调用时，协议保持原始对象返回类型，server 用 `BridgeRouter.returnRemoteObj(object)` 给原对象注入模块私有、不可枚举的 symbol 标记并原样返回，client 自动得到远端代理。类型层根据返回对象是否声明方法，把方法对象映射为 `RemoteObject<T>`，纯数据对象仍保留原类型。client 用
+  `destroyRemoteObj(proxy)` 显式请求删除 server 实例；根代理与其成员路径代理共享引用状态，销毁任意一个后同根调用和重复销毁会在 client 侧拒绝。已经在 server
+  开始执行的方法不会被取消，可能在 destroy 完成后才返回。server 的 `_remoteObjects` 以 peer 为弱键，但每条活跃连接对应的 `Map` 强引用所有远端实例；client 的 `_remoteObjectReferences` 以代理为弱键，只保存代理到共享引用状态的元数据，不负责通知 server 回收。方法返回的远端代理拥有独立 objectId，应单独 destroy；断线时 server 统一清理，异步调用在断线后完成也不能重新存入对象。
 
 ## 命名约定（现状）
 
