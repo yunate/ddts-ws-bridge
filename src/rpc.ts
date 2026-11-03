@@ -41,17 +41,17 @@ export class BridgeRouter {
     ...params: unknown[]
   ): Promise<unknown> {
     const request: _.Request = { method, params };
-    const raw: string = await caller.send(JSON.stringify(request));
-    const response: _.Response = _.parseResponse(raw);
-    if (!response.ok) throw new Error(response.error);
-    return response.data;
+    return BridgeRouter._sendRequest(caller, JSON.stringify(request));
   }
 
   /**
-   * 将方法返回的对象标记为远端对象, 调用方将收到可继续调用的代理而不是 JSON 数据.
-   * @param object 要作为远端引用返回的对象
+    * 标记本地实现对象，供远端方法的顶层参数或返回值按引用传递。
+    * @param object 本地实际实现对象，不支持已有远端代理的转发
    */
   public static returnRemoteObj<T extends object>(object: T): T {
+    if (BridgeRouter.getRouter()._remoteObjectReferences.has(object)) {
+      throw new Error("不能导出已有远端对象代理");
+    }
     Object.defineProperty(object, BridgeRouter._remoteObjectMarker, { value: true });
     return object;
   }
@@ -197,12 +197,25 @@ export class BridgeRouter {
       },
       async apply(_target: typeof target, _thisArg: unknown, params: unknown[]): Promise<unknown> {
         if (reference.isDestroyed) throw new Error("远端对象已被销毁");
-        const info: _.CallInfo = { objectId: reference.objectId, functionPath, params };
-        const result: unknown = await BridgeRouter.send(
-          reference.caller,
-          BridgeRouter._callRemoteObjectFunctionHandlerMethod,
-          info,
-        );
+        const router: BridgeRouter = BridgeRouter.getRouter();
+        const exportedIds: string[] = [];
+        let request: string;
+        try {
+          const info: _.CallInfo = {
+            objectId: reference.objectId,
+            functionPath,
+            params: router._encodeRemoteArguments(reference.caller, params, exportedIds),
+          };
+          request = JSON.stringify({
+            method: BridgeRouter._callRemoteObjectFunctionHandlerMethod,
+            params: [info],
+          } satisfies _.Request);
+        } catch (error: unknown) {
+          const objects: Map<string, object> | undefined = router._remoteObjects.get(reference.caller);
+          for (const objectId of exportedIds) objects?.delete(objectId);
+          throw error;
+        }
+        const result: unknown = await BridgeRouter._sendRequest(reference.caller, request);
         const callResult: _.RemoteCallResult = BridgeRouter._parseRemoteCallResult(result);
         return callResult.kind === "value"
           ? callResult.value
@@ -212,6 +225,13 @@ export class BridgeRouter {
     const proxy: typeof target = new Proxy(target, handler);
     BridgeRouter.getRouter()._remoteObjectReferences.set(proxy, reference);
     return proxy;
+  }
+
+  private static async _sendRequest(caller: BridgePeer, request: string): Promise<unknown> {
+    const raw: string = await caller.send(request);
+    const response: _.Response = _.parseResponse(raw);
+    if (!response.ok) throw new Error(response.error);
+    return response.data;
   }
 
   private static _finalizeRemoteObject(reference: _.RemoteObjectReference): void {
@@ -304,6 +324,33 @@ export class BridgeRouter {
     return objectId;
   }
 
+  private _encodeRemoteArguments(
+    peer: BridgePeer,
+    params: unknown[],
+    exportedIds: string[],
+  ): _.RemoteArgument[] {
+    const encodedParams: _.RemoteArgument[] = params.map((value: unknown): _.RemoteArgument => {
+      if (value !== null && (typeof value === "object" || typeof value === "function") &&
+        this._remoteObjectReferences.has(value)) {
+        throw new Error("不能传递已有远端对象代理");
+      }
+      if (value !== null && typeof value === "object" &&
+        BridgeRouter._remoteObjectMarker in value && value[BridgeRouter._remoteObjectMarker] === true) {
+        const objectId: string = this._storeRemoteObject(peer, value);
+        exportedIds.push(objectId);
+        return { kind: "remoteObject", objectId };
+      }
+      return { kind: "value", value };
+    });
+    const values: unknown = JSON.parse(JSON.stringify(encodedParams.map(
+      (param: _.RemoteArgument): unknown => param.kind === "value" ? param.value : null,
+    )));
+    if (!Array.isArray(values)) throw new Error("非法远端对象调用参数");
+    return encodedParams.map((param: _.RemoteArgument, index: number): _.RemoteArgument =>
+      param.kind === "value" ? { kind: "value", value: values[index] } : param,
+    );
+  }
+
   private async _callRemoteObjectFunctionHandler(peer: BridgePeer, value: unknown): Promise<unknown> {
     const info: _.CallInfo = _.parseCallInfo(value);
     const object: object | undefined = this._remoteObjects.get(peer)?.get(info.objectId);
@@ -313,7 +360,10 @@ export class BridgeRouter {
 
     const remoteMethod: (...params: unknown[]) => unknown =
       BridgeRouter._getRemoteMethod(object, info.functionPath);
-    const result: unknown = await remoteMethod(...info.params);
+    const decodedParams: unknown[] = info.params.map((param: _.RemoteArgument): unknown =>
+      param.kind === "value" ? param.value : BridgeRouter._createRemoteObjectProxy<object>(peer, param.objectId),
+    );
+    const result: unknown = await remoteMethod(...decodedParams);
     if (result === null || typeof result !== "object" ||
       !(BridgeRouter._remoteObjectMarker in result) || result[BridgeRouter._remoteObjectMarker] !== true) {
       return { kind: "value", value: result } satisfies _.RemoteCallResult;
@@ -384,8 +434,12 @@ namespace _ {
   export type CallInfo = {
     objectId: string;
     functionPath: string[];
-    params: unknown[];
+    params: RemoteArgument[];
   };
+
+  export type RemoteArgument =
+    | { kind: "value"; value: unknown }
+    | { kind: "remoteObject"; objectId: string };
 
   export type RemoteObjectReference = {
     caller: BridgePeer;
@@ -442,7 +496,23 @@ namespace _ {
     if (!("params" in value) || !Array.isArray(value.params)) {
       throw new Error("远端对象 params 必须是数组");
     }
-    return { objectId, functionPath, params: value.params };
+    const params: RemoteArgument[] = value.params.map(parseRemoteArgument);
+    return { objectId, functionPath, params };
+  }
+
+  function parseRemoteArgument(value: unknown): RemoteArgument {
+    if (value !== null && typeof value === "object" && !Array.isArray(value) && "kind" in value) {
+      if (value.kind === "value" && "value" in value) {
+        return { kind: "value", value: value.value };
+      }
+      if (value.kind === "remoteObject") {
+        return {
+          kind: "remoteObject",
+          objectId: parseString("objectId" in value ? value.objectId : undefined),
+        };
+      }
+    }
+    throw new Error("非法远端对象调用参数描述符");
   }
 }
 

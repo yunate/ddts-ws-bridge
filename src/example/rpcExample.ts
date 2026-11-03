@@ -8,12 +8,13 @@
  *     调用方在使用未受信的 result 前按需校验。
  * 双向校验遵循「谁接收不可信数据谁校验」：params 由 server handler 校验，result 由 client 调用方校验。
  *
- * 注意：BridgeRouter 是进程级单例。本 demo 在同一进程内跑 server 与 client，
- * 因此只让服务端注册 handler 并 dispatch；客户端仅用 send 主动调用，避免单例冲突。
+ * BridgeRouter 是进程级单例，方法和工厂名称须唯一；需要反向调用时，两端均接入 dispatch。
  */
+import { strict as assert } from 'node:assert';
 import { WSServerBridgeListener } from '../wsServerPeer';
 import { CreateWSClientPeer } from '../wsClientPeer';
 import { BridgeRouter } from '../rpc';
+import type { RemoteObject } from '../rpc';
 import { Validate } from './validator';
 
 // ---- 方法契约：method 名 + 参数/返回类型 + 运行时断言函数 ----
@@ -50,9 +51,24 @@ function validateGreetResult(value: unknown): asserts value is GreetResult {
 const PING_METHOD = 'sys.ping';
 // 无参、无返回的方法：send 时省略 params。
 
+interface CounterCallback {
+  add(value: number): number;
+}
+
+function validateCounterCallback(value: unknown): asserts value is { add(amount: number): unknown } {
+  if (value === null || typeof value !== 'object') {
+    throw new Error('callback 必须提供 add 方法');
+  }
+  const method: unknown = Reflect.get(value, 'add');
+  if (typeof method !== 'function') {
+    throw new Error('callback 必须提供 add 方法');
+  }
+}
+
 interface Counter {
   add(value: number): number;
   getValue(): number;
+  onCallback(callback: CounterCallback | RemoteObject<CounterCallback>): Promise<number>;
 }
 
 class CounterService implements Counter {
@@ -63,6 +79,13 @@ class CounterService implements Counter {
 
   public getValue(): number {
     return this._value;
+  }
+
+  public async onCallback(callback: unknown): Promise<number> {
+    validateCounterCallback(callback);
+    const result: unknown = await callback.add(2);
+    Validate.ensureNumber(result);
+    return result;
   }
 
   private _value = 0;
@@ -109,6 +132,7 @@ async function main() {
 
   // ---- 客户端：用 send 发起类型化调用 ----
   const client = CreateWSClientPeer(url);
+  router.startDispatchMessage(client);
   await client.waitForConnect();
   console.log('[client] 已连接');
 
@@ -129,6 +153,16 @@ async function main() {
   console.log('[client] counter.add =>', await counter.add(2));
   console.log('[client] counter.add =>', await counter.add(40));
   console.log('[client] counter.getValue =>', await counter.getValue());
+  const callback = {
+    value: 0,
+    add(amount: number): number {
+      this.value += amount;
+      return this.value;
+    },
+  };
+  assert.equal(await counter.onCallback(BridgeRouter.returnRemoteObj(callback)), 2);
+  assert.equal(callback.value, 2);
+  console.log('[client] callback =>', callback.value);
   await BridgeRouter.destroyRemoteObj(counter);
   try {
     await counter.getValue();

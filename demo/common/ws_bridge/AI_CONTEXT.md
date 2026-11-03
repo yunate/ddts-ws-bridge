@@ -26,13 +26,15 @@
   `timeout`（`PeerOptions.timeout`，默认 30000ms）约束，任一阶段超时即 reject。
 - **`waitForConnect(timeout?)`**：无参一直等到连接；传参在超时后 reject（`Wait for connect timed out`）。
   `waitForDisconnect()` 无参，等到断开。
+- **连接事件**：`onConnect(listener)` / `onDisconnect(listener)` 返回 `() => void`，只取消本次注册且可重复调用；
+  同一回调重复注册各自独立。注册不立即通知当前状态，仅在状态切换时派发；取消不影响其他监听或 wait 的一次性监听。
 - **断线/超时清理**：断线时拒绝所有 pending（`Connection closed`）并清空；send 超时删除对应 pending。
 - **connectId**：client 生成 UUID，经 `sec-websocket-protocol` 子协议头传给 server；server 侧用 `ws` 的
   `handleProtocols` 原样回选第一个子协议（隐含假设 client 仅发单个 connectId 子协议，故第一个即该 connectId），
   使握手响应带上 `Sec-WebSocket-Protocol` 头（符合 RFC6455 对称握手，
   避免严格 client 因 server 未回选而中断）；缺失 connectId 的连接直接关闭，不留悬挂。`getConnectId()` 读取。
-- **`BridgeRouter` 进程级单例**（`getRouter()`）：单进程内只应一端注册 handler + `startDispatchMessage`，
-  另一端仅 `send`，避免单例冲突（见 rpcExample）。
+- **`BridgeRouter` 进程级单例**（`getRouter()`）：注册名称在进程内唯一；同进程双端可共用 router，
+  双向调用须为两端各自的 peer 启用 `startDispatchMessage`（见 rpcExample）。
 - **双向校验（谁接收不可信数据谁校验）**：server handler 在使用入站 params 前按需校验，client 调用方在使用 result 前按需校验。
   `BridgeRouter` 只在消费处直接检查 `Request`/`Response` 信封与内置远端对象参数，不提供校验器抽象。
 - **错误策略**：入站可控错误回 `err.message`；非法 JSON / 缺字段的入站消息静默忽略、不崩溃；不把内部堆栈泄给对端。
@@ -41,6 +43,16 @@
   `RemoteObject<T>` 递归保留嵌套对象的方法和参数类型。普通对象结果按 JSON 返回；需要把方法结果作为新远端对象继续调用时，协议保持原始对象返回类型，server 用 `BridgeRouter.returnRemoteObj(object)` 给原对象注入模块私有、不可枚举的 symbol 标记并原样返回，client 自动得到远端代理。类型层根据返回对象是否声明方法，把方法对象映射为 `RemoteObject<T>`，纯数据对象仍保留原类型。client 用
   `destroyRemoteObj(proxy)` 显式请求删除 server 实例；根代理与其成员路径代理共享引用状态，销毁任意一个后同根调用和重复销毁会在 client 侧拒绝。已经在 server
   开始执行的方法不会被取消，可能在 destroy 完成后才返回。server 的 `_remoteObjects` 以 peer 为弱键，但每条活跃连接对应的 `Map` 强引用所有远端实例；client 的 `_remoteObjectReferences` 以代理为弱键，只保存代理到共享引用状态的元数据，不负责通知 server 回收。方法返回的远端代理拥有独立 objectId，应单独 destroy；断线时 server 统一清理，异步调用在断线后完成也不能重新存入对象。
+- **方法参数引用**：普通远端对象方法的顶层参数复用 `returnRemoteObj(localObject)` 标记；发送端按 peer
+  存储本地实现对象，接收端直接以同一 peer 和 objectId 创建反向代理，不查询自己的导出表，也不发反向注册请求。
+  所有顶层参数统一包装为 `value` / `remoteObject` 描述符并先整体校验；这要求两端支持新的内部 call 格式。
+  普通值先按原 params 数组归一化 JSON，保留 undefined/function/symbol → null 及 toJSON 的数组键语义，避免业务数据的 kind/objectId 与描述符冲突。
+  `RemoteObject<T>` 参数类型不变，协议示例用本地同步接口与 `RemoteObject<接口>` 的联合表达两端差异；
+  接收端只守卫可调用形状并在 await 后校验结果（代理不支持用 `in` 检查方法）。无新增类型导出。
+- **引用生命周期与边界**：参数导出是独立句柄，接收端可保留并显式 destroy；不随 parent 级联释放、不调用业务 dispose，
+  断线清理导出表，FinalizationRegistry 仅尽力回收。仅在进入 peer.send 之前的编码/序列化失败中回滚本次导出；
+  发送后超时/业务报错不能证明未交付，不自动回滚。只支持本地实际实现对象，已知远端代理及成员代理拒绝转发/再次标记。
+  不递归处理嵌套参数、不支持直接函数引用，也不扩展普通 send / createRemoteObj 入参；方法返回对象引用语义不变。
 
 ## 命名约定（现状）
 

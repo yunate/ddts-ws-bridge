@@ -34,12 +34,22 @@ export class BridgePeer {
     if (socket.isConnected()) this._handleConnect();
   }
 
-  public onConnect(listener: () => void): void {
-    this._connectListeners.push(listener);
+  public onConnect(listener: () => void): () => void {
+    const registeredListener = () => listener();
+    this._connectListeners.push(registeredListener);
+    return () => {
+      const index = this._connectListeners.indexOf(registeredListener);
+      if (index >= 0) this._connectListeners.splice(index, 1);
+    };
   }
 
-  public onDisconnect(listener: () => void): void {
-    this._disconnectListeners.push(listener);
+  public onDisconnect(listener: () => void): () => void {
+    const registeredListener = () => listener();
+    this._disconnectListeners.push(registeredListener);
+    return () => {
+      const index = this._disconnectListeners.indexOf(registeredListener);
+      if (index >= 0) this._disconnectListeners.splice(index, 1);
+    };
   }
 
   public async waitForConnect(timeout?: number): Promise<void> {
