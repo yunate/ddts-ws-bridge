@@ -97,6 +97,8 @@ await BridgeRouter.destroyRemoteObj(counter);
 
 远端方法总是异步执行。`createRemoteObj<T>` 返回的 `RemoteObject<T>` 会保留方法参数类型，并把普通方法结果自动映射为 `Promise<Awaited<TResult>>`。对象字段可以继续访问其嵌套方法。普通对象返回值按 JSON 传输；若方法需要返回一个可继续调用的远端对象，协议仍声明原始对象类型，服务端通过 `BridgeRouter.returnRemoteObj(object)` 给原对象注入非序列化标记并原样返回：
 
+`returnRemoteObj` 定义标记后立即校验；对象不兼容标记定义或读取时会同步抛错，不会延迟到 RPC 编码时。
+
 ```ts
 interface Son {
   func1(): void;
@@ -171,7 +173,7 @@ console.log(await parent.onCallback(BridgeRouter.returnRemoteObj(localCallback))
 console.log(localCallback.value); // 2，方法的 this 仍指向本地对象
 ```
 
-- 只识别方法的顶层参数标记；嵌套对象/数组中的标记仍按 JSON 数据处理，不递归导出。普通 `BridgeRouter.send` 和 `createRemoteObj` 的入参不支持引用传递，不支持直接函数引用。只能导出本地实际实现对象，已知远端代理（包括成员代理）传参或再次标记会被受控拒绝，不支持代理转发/传回。
+- 只识别方法的顶层参数标记；嵌套对象/数组中的标记仍按 JSON 数据处理，不递归导出。普通 `BridgeRouter.send` 和 `createRemoteObj` 的入参不支持引用传递，不支持直接函数引用。已有根代理可由远端对象方法直接 `return BridgeRouter.returnRemoteObj(cProxy)`，已验证 A-B-C 单段方法的普通 JSON 参数与普通值结果；A 销毁出口句柄不销毁 B 的源代理。多跳 callback、引用返回及嵌套函数路径不保证支持，不代表全面透明转发。
 - 未标记参数保持 JSON 按值行为，包括顶层 `undefined`、function、symbol 转为 `null`。普通含 `kind` / `objectId` 的业务对象不会被误判为引用。
 - 接收端可以保留 callback，在初次 RPC 返回后继续调用；不再使用时由接收端 `await BridgeRouter.destroyRemoteObj(callbackProxy)`。每次导出产生独立句柄，不随 parent 级联销毁，不自动调用业务 `dispose`。断线清理导出表，`FinalizationRegistry` 仅尽力回收，不能替代显式销毁。
 - 参数编码/序列化失败且尚未调用 `peer.send` 时，只回滚本次新增的导出。进入发送后，超时、业务错误或其他发送失败不能证明未交付，不自动回滚；接收端可能已经保留引用，须按上述生命周期释放。

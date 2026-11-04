@@ -98,8 +98,10 @@ export class BridgePeer {
   }
 
   public async send(data: string): Promise<string> {
+    if (this._hasDisconnected) throw new Error('Connection closed');
     const start = Date.now();
     await this.waitForConnect(this._timeout);
+    if (this._hasDisconnected) throw new Error('Connection closed');
     const remaining = Math.max(0, this._timeout - (Date.now() - start));
     const id = BridgePeer._genId();
     const envelope: RawMessage = { id, kind: 'request', data };
@@ -146,6 +148,7 @@ export class BridgePeer {
   }
 
   private _handleDisconnect(): void {
+    this._hasDisconnected = true;
     if (!this._connected) return;
     this._connected = false;
     for (const l of [...this._disconnectListeners]) l();
@@ -205,6 +208,7 @@ export class BridgePeer {
   private _pending = new Map<string, PendingResponse>();
   private _handler?: MessageHandler;
   private _connected = false;
+  private _hasDisconnected = false;
   private _connectListeners: (() => void)[] = [];
   private _disconnectListeners: (() => void)[] = [];
 }

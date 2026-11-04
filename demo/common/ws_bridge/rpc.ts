@@ -45,14 +45,15 @@ export class BridgeRouter {
   }
 
   /**
-    * 标记本地实现对象，供远端方法的顶层参数或返回值按引用传递。
-    * @param object 本地实际实现对象，不支持已有远端代理的转发
+    * 标记对象，供远端方法的顶层参数或返回值按引用传递。
+    * @param object 本地实现对象，或由远端方法返回的已有根代理
+    * @remark 根代理返回仅验证单段方法的普通 JSON 参数与普通值结果；多跳 callback、引用返回、嵌套函数路径和函数引用不保证支持。
    */
   public static returnRemoteObj<T extends object>(object: T): T {
-    if (BridgeRouter.getRouter()._remoteObjectReferences.has(object)) {
-      throw new Error("不能导出已有远端对象代理");
-    }
     Object.defineProperty(object, BridgeRouter._remoteObjectMarker, { value: true });
+    if (!BridgeRouter._isMarkedRemoteObject(object)) {
+      throw new Error("远端对象标记失败");
+    }
     return object;
   }
 
@@ -166,6 +167,9 @@ export class BridgeRouter {
     const proxyHandler: ProxyHandler<RemoteObject<T>> = {
       get(_target: RemoteObject<T>, property: string | symbol): unknown {
         if (property === "then") return undefined;
+        if (property === BridgeRouter._remoteObjectMarker) {
+          return Reflect.get(_target, property);
+        }
         if (typeof property !== "string") return undefined;
         return BridgeRouter._createRemoteMemberProxy(
           reference,
@@ -239,6 +243,11 @@ export class BridgeRouter {
     void BridgeRouter.destroyRemoteObj(reference).catch((): void => undefined);
   }
 
+  private static _isMarkedRemoteObject(value: unknown): value is object {
+    return value !== null && typeof value === "object" &&
+      BridgeRouter._remoteObjectMarker in value && value[BridgeRouter._remoteObjectMarker] === true;
+  }
+
   private static _parseRemoteCallResult(value: unknown): _.RemoteCallResult {
     if (value === null || typeof value !== "object" || !("kind" in value)) {
       throw new Error("非法远端对象调用结果");
@@ -281,17 +290,7 @@ export class BridgeRouter {
     if (propertyName === "constructor" || propertyName === "__proto__" || propertyName === "prototype") {
       throw new Error(`远端对象方法不存在: ${functionPath.join(".")}`);
     }
-    let current: object | null = object;
-    while (current && current !== Object.prototype) {
-      const descriptor: PropertyDescriptor | undefined = Object.getOwnPropertyDescriptor(current, propertyName);
-      if (descriptor) {
-        if (!("value" in descriptor)) break;
-        const value: unknown = descriptor.value;
-        return value;
-      }
-      current = Object.getPrototypeOf(current);
-    }
-    throw new Error(`远端对象方法不存在: ${functionPath.join(".")}`);
+    return Reflect.get(object, propertyName);
   }
 
   private async _createRemoteObjectHandler(
@@ -330,12 +329,7 @@ export class BridgeRouter {
     exportedIds: string[],
   ): _.RemoteArgument[] {
     const encodedParams: _.RemoteArgument[] = params.map((value: unknown): _.RemoteArgument => {
-      if (value !== null && (typeof value === "object" || typeof value === "function") &&
-        this._remoteObjectReferences.has(value)) {
-        throw new Error("不能传递已有远端对象代理");
-      }
-      if (value !== null && typeof value === "object" &&
-        BridgeRouter._remoteObjectMarker in value && value[BridgeRouter._remoteObjectMarker] === true) {
+      if (BridgeRouter._isMarkedRemoteObject(value)) {
         const objectId: string = this._storeRemoteObject(peer, value);
         exportedIds.push(objectId);
         return { kind: "remoteObject", objectId };
@@ -364,8 +358,7 @@ export class BridgeRouter {
       param.kind === "value" ? param.value : BridgeRouter._createRemoteObjectProxy<object>(peer, param.objectId),
     );
     const result: unknown = await remoteMethod(...decodedParams);
-    if (result === null || typeof result !== "object" ||
-      !(BridgeRouter._remoteObjectMarker in result) || result[BridgeRouter._remoteObjectMarker] !== true) {
+    if (!BridgeRouter._isMarkedRemoteObject(result)) {
       return { kind: "value", value: result } satisfies _.RemoteCallResult;
     }
     return {

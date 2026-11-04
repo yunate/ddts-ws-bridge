@@ -45,14 +45,15 @@ export class BridgeRouter {
   }
 
   /**
-    * 标记本地实现对象，供远端方法的顶层参数或返回值按引用传递。
-    * @param object 本地实际实现对象，不支持已有远端代理的转发
+    * 标记对象，供远端方法的顶层参数或返回值按引用传递。
+    * @param object 本地实现对象，或由远端方法返回的已有根代理
+    * @remark 根代理返回仅验证单段方法的普通 JSON 参数与普通值结果；多跳 callback、引用返回、嵌套函数路径和函数引用不保证支持。
    */
   public static returnRemoteObj<T extends object>(object: T): T {
-    if (BridgeRouter.getRouter()._remoteObjectReferences.has(object)) {
-      throw new Error("不能导出已有远端对象代理");
-    }
     Object.defineProperty(object, BridgeRouter._remoteObjectMarker, { value: true });
+    if (!BridgeRouter._isMarkedRemoteObject(object)) {
+      throw new Error("远端对象标记失败");
+    }
     return object;
   }
 
@@ -96,7 +97,7 @@ export class BridgeRouter {
    * 删除服务端的远端对象实例并阻止代理发起后续调用。
    * @typeParam T 远端对象的接口类型
    * @param remoteObject 根代理、其成员代理或方法返回的远端对象代理
-   * @returns 成功删除返回 true；参数不是远端对象代理或对象已销毁时返回 false
+  * @returns 成功删除返回 true；参数不是远端对象代理、对象已销毁或连接已断开时返回 false
    * @remark 成员代理与根代理共享 objectId，销毁任意一个都会使同根代理全部失效。
    * @remark 已经在服务端开始执行的方法不会被取消，可能在本方法完成后才返回。
    * @throws 删除请求失败
@@ -104,15 +105,10 @@ export class BridgeRouter {
   public static async destroyRemoteObj<T>(remoteObject: RemoteObject<T>): Promise<boolean> {
     const router: BridgeRouter = BridgeRouter.getRouter();
     const reference: _.RemoteObjectReference | undefined = router._remoteObjectReferences.get(remoteObject);
-    if (!reference || reference.isDestroyed) return false;
-    await BridgeRouter.send(
-      reference.caller,
-      BridgeRouter._destroyRemoteObjectHandlerMethod,
-      reference.objectId,
-    );
-    reference.isDestroyed = true;
-    router._remoteObjectReferences.delete(remoteObject);
-    return true;
+    if (!reference) return false;
+    const isDestroyed: boolean = await BridgeRouter._destroyRemoteReference(reference);
+    if (isDestroyed) router._remoteObjectReferences.delete(remoteObject);
+    return isDestroyed;
   }
 
   /**
@@ -166,6 +162,9 @@ export class BridgeRouter {
     const proxyHandler: ProxyHandler<RemoteObject<T>> = {
       get(_target: RemoteObject<T>, property: string | symbol): unknown {
         if (property === "then") return undefined;
+        if (property === BridgeRouter._remoteObjectMarker) {
+          return Reflect.get(_target, property);
+        }
         if (typeof property !== "string") return undefined;
         return BridgeRouter._createRemoteMemberProxy(
           reference,
@@ -176,7 +175,6 @@ export class BridgeRouter {
     const proxy: RemoteObject<T> = new Proxy({} as RemoteObject<T>, proxyHandler);
     const router: BridgeRouter = BridgeRouter.getRouter();
     router._remoteObjectReferences.set(proxy, reference);
-    router._remoteObjectReferences.set(reference, reference);
     BridgeRouter._remoteObjectFinalizer.register(proxy, reference);
     return proxy;
   }
@@ -234,9 +232,21 @@ export class BridgeRouter {
     return response.data;
   }
 
-  private static _finalizeRemoteObject(reference: _.RemoteObjectReference): void {
-    if (!reference.caller.isConnected()) return;
-    void BridgeRouter.destroyRemoteObj(reference).catch((): void => undefined);
+  private static async _destroyRemoteReference(reference: _.RemoteObjectReference): Promise<boolean> {
+    if (reference.isDestroyed) return false;
+    if (!reference.caller.isConnected()) return false;
+    await BridgeRouter.send(
+      reference.caller,
+      BridgeRouter._destroyRemoteObjectHandlerMethod,
+      reference.objectId,
+    );
+    reference.isDestroyed = true;
+    return true;
+  }
+
+  private static _isMarkedRemoteObject(value: unknown): value is object {
+    return value !== null && typeof value === "object" &&
+      BridgeRouter._remoteObjectMarker in value && value[BridgeRouter._remoteObjectMarker] === true;
   }
 
   private static _parseRemoteCallResult(value: unknown): _.RemoteCallResult {
@@ -281,17 +291,7 @@ export class BridgeRouter {
     if (propertyName === "constructor" || propertyName === "__proto__" || propertyName === "prototype") {
       throw new Error(`远端对象方法不存在: ${functionPath.join(".")}`);
     }
-    let current: object | null = object;
-    while (current && current !== Object.prototype) {
-      const descriptor: PropertyDescriptor | undefined = Object.getOwnPropertyDescriptor(current, propertyName);
-      if (descriptor) {
-        if (!("value" in descriptor)) break;
-        const value: unknown = descriptor.value;
-        return value;
-      }
-      current = Object.getPrototypeOf(current);
-    }
-    throw new Error(`远端对象方法不存在: ${functionPath.join(".")}`);
+    return Reflect.get(object, propertyName);
   }
 
   private async _createRemoteObjectHandler(
@@ -330,12 +330,7 @@ export class BridgeRouter {
     exportedIds: string[],
   ): _.RemoteArgument[] {
     const encodedParams: _.RemoteArgument[] = params.map((value: unknown): _.RemoteArgument => {
-      if (value !== null && (typeof value === "object" || typeof value === "function") &&
-        this._remoteObjectReferences.has(value)) {
-        throw new Error("不能传递已有远端对象代理");
-      }
-      if (value !== null && typeof value === "object" &&
-        BridgeRouter._remoteObjectMarker in value && value[BridgeRouter._remoteObjectMarker] === true) {
+      if (BridgeRouter._isMarkedRemoteObject(value)) {
         const objectId: string = this._storeRemoteObject(peer, value);
         exportedIds.push(objectId);
         return { kind: "remoteObject", objectId };
@@ -364,8 +359,7 @@ export class BridgeRouter {
       param.kind === "value" ? param.value : BridgeRouter._createRemoteObjectProxy<object>(peer, param.objectId),
     );
     const result: unknown = await remoteMethod(...decodedParams);
-    if (result === null || typeof result !== "object" ||
-      !(BridgeRouter._remoteObjectMarker in result) || result[BridgeRouter._remoteObjectMarker] !== true) {
+    if (!BridgeRouter._isMarkedRemoteObject(result)) {
       return { kind: "value", value: result } satisfies _.RemoteCallResult;
     }
     return {
@@ -404,7 +398,9 @@ export class BridgeRouter {
   private static readonly _remoteObjectMarker: unique symbol = Symbol("__remoteObject__");
   private static readonly _remoteObjectFinalizer: FinalizationRegistry<_.RemoteObjectReference> =
     new FinalizationRegistry((reference: _.RemoteObjectReference): void => {
-      BridgeRouter._finalizeRemoteObject(reference);
+      // 根代理已被 GC，其作为 key 的 WeakMap 记录会自动清理，无需在此 delete。
+      // 成员代理的记录随各自的 key 被 GC 清理；存活成员通过共享的 isDestroyed 状态失效。
+      void BridgeRouter._destroyRemoteReference(reference).catch((): void => undefined);
     });
   private static _instance: BridgeRouter | null = null;
 

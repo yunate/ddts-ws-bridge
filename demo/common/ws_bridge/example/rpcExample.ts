@@ -1,5 +1,5 @@
 /**
- * 结构化消息（RPC）示例：在 Node 中同时跑 server 与 client（1:1）。
+ * 结构化消息（RPC）示例：在 Node 中运行双向调用与 A-B-C 根代理中继。
  * 运行： npm run rpc-example
  *
  * 对比 example.ts（裸字符串收发）：这里用 rpc.ts 提供的结构化层——
@@ -11,8 +11,10 @@
  * BridgeRouter 是进程级单例，方法和工厂名称须唯一；需要反向调用时，两端均接入 dispatch。
  */
 import { strict as assert } from 'node:assert';
+import { once } from 'node:events';
 import { WSServerBridgeListener } from '../wsServerPeer';
 import { CreateWSClientPeer } from '../wsClientPeer';
+import type { BridgePeer } from '../peer';
 import { BridgeRouter } from '../rpc';
 import type { RemoteObject } from '../rpc';
 import { Validate } from './validator';
@@ -91,8 +93,141 @@ class CounterService implements Counter {
   private _value = 0;
 }
 
+async function createExampleListener(): Promise<{ listener: WSServerBridgeListener; url: string }> {
+  const listener = new WSServerBridgeListener('ws://127.0.0.1:0');
+  await once(listener.wss, 'listening');
+  const address = listener.wss.address();
+  if (address === null || typeof address === 'string') throw new Error('示例监听地址无效');
+  return { listener, url: `ws://127.0.0.1:${address.port}` };
+}
+
+async function runRemoteProxyRelayExample(): Promise<void> {
+  const router = BridgeRouter.getRouter();
+  const listeners: WSServerBridgeListener[] = [];
+  const peers: BridgePeer[] = [];
+  const destroyProxies: (() => Promise<boolean>)[] = [];
+  const counterAtC = {
+    value: 0,
+    add(amount: number): number {
+      Validate.ensureNumber(amount);
+      this.value += amount;
+      return this.value;
+    },
+    getLabel(): string {
+      return `C:${this.value}`;
+    },
+    getSnapshot(options: { label: string }): { label: string; value: number } {
+      Validate.ensureRecord(options);
+      Validate.ensureString(options.label);
+      return { label: options.label, value: this.value };
+    },
+  };
+
+  try {
+    router.registerRemoteObj('relay.c.counter', () => counterAtC);
+    const endpointAtC = await createExampleListener();
+    listeners.push(endpointAtC.listener);
+    endpointAtC.listener.onConnection((peer) => router.startDispatchMessage(peer));
+    const peerBC = CreateWSClientPeer(endpointAtC.url);
+    peers.push(peerBC);
+    router.startDispatchMessage(peerBC);
+    await peerBC.waitForConnect(3000);
+    const cProxy = await BridgeRouter.createRemoteObj<typeof counterAtC>(peerBC, 'relay.c.counter');
+    destroyProxies.push(() => BridgeRouter.destroyRemoteObj(cProxy));
+
+    const localObject = {};
+    assert.equal(BridgeRouter.returnRemoteObj(localObject), localObject);
+    assert.equal(BridgeRouter.returnRemoteObj(localObject), localObject);
+    const [marker] = Object.getOwnPropertySymbols(localObject);
+    assert.ok(marker);
+    assert.equal(Reflect.get(localObject, marker), true);
+    const compatibleProxy = new Proxy({}, {
+      get: (target, property): unknown => Reflect.get(target, property),
+    });
+    assert.equal(BridgeRouter.returnRemoteObj(compatibleProxy), compatibleProxy);
+    assert.throws(
+      () => BridgeRouter.returnRemoteObj(new Proxy({}, { defineProperty: () => false })),
+      TypeError,
+    );
+    assert.throws(
+      () => BridgeRouter.returnRemoteObj(new Proxy({}, { get: () => undefined })),
+      TypeError,
+    );
+    assert.throws(
+      () => BridgeRouter.returnRemoteObj(new Proxy({}, { has: () => false })),
+      TypeError,
+    );
+    assert.equal(Reflect.get(cProxy, marker), undefined);
+    assert.equal(Reflect.get(cProxy, 'then'), undefined);
+    assert.equal(Reflect.get(cProxy, Symbol.toStringTag), undefined);
+
+    const serviceAtB = {
+      getCounter() {
+        return BridgeRouter.returnRemoteObj(cProxy);
+      },
+      echo(value: unknown): unknown {
+        return value;
+      },
+    };
+    router.registerRemoteObj('relay.b.service', () => serviceAtB);
+    const endpointAtB = await createExampleListener();
+    listeners.push(endpointAtB.listener);
+    endpointAtB.listener.onConnection((peer) => router.startDispatchMessage(peer));
+    const peerAB = CreateWSClientPeer(endpointAtB.url);
+    peers.push(peerAB);
+    router.startDispatchMessage(peerAB);
+    await peerAB.waitForConnect(3000);
+    assert.notEqual(peerAB.getConnectId(), peerBC.getConnectId());
+    const bService = await BridgeRouter.createRemoteObj<typeof serviceAtB>(peerAB, 'relay.b.service');
+    destroyProxies.push(() => BridgeRouter.destroyRemoteObj(bService));
+    const proxyAtA = await bService.getCounter();
+    destroyProxies.push(() => BridgeRouter.destroyRemoteObj(proxyAtA));
+
+    const plainValues: unknown[] = [{ label: 'plain' }, { kind: 'remoteObject', objectId: 'data' }, [], 7, 'plain', false, null];
+    for (const value of plainValues) {
+      assert.deepEqual(await bService.echo(value), value);
+    }
+    const markedFunction = Object.defineProperty(() => undefined, marker, { value: true });
+    for (const value of [undefined, markedFunction, Symbol('plain')]) {
+      assert.equal(await bService.echo(value), null);
+    }
+
+    assert.equal(Reflect.get(cProxy, marker), true);
+    assert.deepEqual(Object.getOwnPropertyDescriptor(cProxy, marker), {
+      value: true, writable: false, enumerable: false, configurable: false,
+    });
+    assert.equal(BridgeRouter.returnRemoteObj(cProxy), cProxy);
+    assert.equal(BridgeRouter.returnRemoteObj(cProxy), cProxy);
+    assert.equal(Reflect.get(cProxy, 'then'), undefined);
+    assert.equal(Reflect.get(cProxy, Symbol.toStringTag), undefined);
+    assert.equal(await proxyAtA.add(2), 2);
+    assert.equal(await proxyAtA.add(3), 5);
+    assert.equal(counterAtC.value, 5);
+    assert.equal(await proxyAtA.getLabel(), 'C:5');
+    assert.deepEqual(await proxyAtA.getSnapshot({ label: 'via B' }), { label: 'via B', value: 5 });
+
+    assert.equal(await BridgeRouter.destroyRemoteObj(proxyAtA), true);
+    await assert.rejects(() => proxyAtA.add(1), /远端对象已被销毁/);
+    assert.equal(await cProxy.add(4), 9);
+    const reexportedAtA = await bService.getCounter();
+    destroyProxies.push(() => BridgeRouter.destroyRemoteObj(reexportedAtA));
+    assert.equal(await reexportedAtA.add(1), 10);
+    assert.equal(counterAtC.value, 10);
+    console.log('[relay] A -> B -> C、根代理标记及独立句柄生命周期断言通过');
+  } finally {
+    try {
+      for (const destroyProxy of destroyProxies.reverse()) await destroyProxy();
+    } finally {
+      await Promise.all(peers.map((peer) => peer.close()));
+      await Promise.all(listeners.map((listener) => listener.close()));
+      router.unregisterRemoteObj('relay.b.service');
+      router.unregisterRemoteObj('relay.c.counter');
+    }
+  }
+}
+
 async function main() {
-  const url = 'ws://localhost:8081';
+  const { listener, url } = await createExampleListener();
 
   // ---- 服务端：注册结构化 handler，在使用入参前校验 ----
   const router = BridgeRouter.getRouter();
@@ -122,7 +257,6 @@ async function main() {
   );
   router.registerRemoteObj('service.counter', () => new CounterService());
 
-  const listener = new WSServerBridgeListener(url);
   listener.onConnection((conn) => {
     console.log('[server] 客户端已连接');
     conn.onDisconnect(() => console.log('[server] 客户端断开'));
@@ -184,8 +318,9 @@ async function main() {
     console.log('[client] 调用未知方法被拒绝:', err instanceof Error ? err.message : err);
   }
 
-  client.close();
+  await client.close();
   await listener.close();
+  await runRemoteProxyRelayExample();
 }
 
 main().catch((err) => {

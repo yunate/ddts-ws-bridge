@@ -51,8 +51,12 @@
   接收端只守卫可调用形状并在 await 后校验结果（代理不支持用 `in` 检查方法）。无新增类型导出。
 - **引用生命周期与边界**：参数导出是独立句柄，接收端可保留并显式 destroy；不随 parent 级联释放、不调用业务 dispose，
   断线清理导出表，FinalizationRegistry 仅尽力回收。仅在进入 peer.send 之前的编码/序列化失败中回滚本次导出；
-  发送后超时/业务报错不能证明未交付，不自动回滚。只支持本地实际实现对象，已知远端代理及成员代理拒绝转发/再次标记。
+  发送后超时/业务报错不能证明未交付，不自动回滚。已有根代理可由远端对象方法 `returnRemoteObj(proxy)` 再导出；根 get 仅透传本模块 marker，其余 symbol 与 then 仍返回 undefined，满足标记后的 Proxy 不变量。
+  `returnRemoteObj` 定义 marker 后立即复用 object-only 标记守卫验证；失败同步抛错，Proxy trap / 不变量异常原样传播，标记属性描述符不变。
+  已验证 A-B-C 单段方法的普通 JSON 参数与普通值结果；出口句柄独立，销毁不级联源代理。多跳 callback、引用返回及嵌套函数路径不保证支持，不代表全面透明转发。
   不递归处理嵌套参数、不支持直接函数引用，也不扩展普通 send / createRemoteObj 入参；方法返回对象引用语义不变。
+- **远端成员读取**：拦截 `constructor` / `__proto__` / `prototype` 后使用 `Reflect.get`，允许 getter 与原型成员；
+  中间路径仍仅接受非 null 对象，不接受函数。
 
 ## 命名约定（现状）
 
