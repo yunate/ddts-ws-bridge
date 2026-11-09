@@ -3,7 +3,13 @@ export interface PeerOptions {
   timeout?: number;
 }
 
-export type MessageHandler = (data: string) => string | Promise<string>;
+export interface MessageHandlerResult {
+  data: string;
+  callback?: () => void | Promise<void>;
+}
+
+export type MessageHandler = (data: string) =>
+  MessageHandlerResult | Promise<MessageHandlerResult>;
 
 export interface BridgeSocket {
   send(data: string): void;
@@ -24,7 +30,11 @@ export class BridgePeer {
     this.socket = socket;
     this.connectId = connectId;
 
-    socket.onMessage((data) => void this._onMessage(data));
+    socket.onMessage((data) => {
+      void this._onMessage(data).catch((error: unknown) => {
+        console.error('[bridge] message processing failed:', error);
+      });
+    });
     socket.onClose(() => this._handleDisconnect());
     socket.onConnected(() => this._handleConnect());
     socket.onError((err) => {
@@ -188,17 +198,22 @@ export class BridgePeer {
 
     // 对端的请求：调用 handler 并回 response。
     let response: RawMessage;
+    let callback: MessageHandlerResult['callback'];
     if (!this._handler) {
       response = { id: msg.id, kind: 'response', error: 'No message handler registered' };
     } else {
       try {
-        const result = await this._handler(msg.data ?? '');
-        response = { id: msg.id, kind: 'response', data: result };
-      } catch (err) {
-        response = { id: msg.id, kind: 'response', error: (err as Error).message };
+        const result: MessageHandlerResult = await this._handler(msg.data ?? '');
+        response = { id: msg.id, kind: 'response', data: result.data };
+        callback = result.callback;
+      } catch (error: unknown) {
+        response = {
+          id: msg.id, kind: 'response', error: error instanceof Error ? error.message : 'Message handler failed',
+        };
       }
     }
     this._post(JSON.stringify(response));
+    await callback?.();
   }
 
   protected socket?: BridgeSocket;

@@ -14,13 +14,14 @@
   类型化调用。业务分发只在这里，不泄漏进传输层。
 
 公开 API 由 [`index.ts`](index.ts) barrel 导出：`BridgePeer`、`BridgeSocket`、`PeerOptions`、
-`MessageHandler`、`WSServerBridgeListener`、`WSServerBridgeListenerOptions`、`CreateWSClientPeer`、
+`MessageHandler`、`MessageHandlerResult`、`WSServerBridgeListener`、`WSServerBridgeListenerOptions`、`CreateWSClientPeer`、
 `BridgeRouter`、`RemoteObject`、`RemoteObjectCreator`、`RpcHandler`。
 
 ## 关键设计与语义
 
 - **id 配对请求/响应模型**：`send(data)` 包装成 `RawMessage{ id, kind:'request', data }` 发出，
   对端 handler 处理后回 `kind:'response'`，按 id 匹配 pending Promise 完成。
+- **发送后处理**: MessageHandler 接收 data, 同步/异步统一返回 MessageHandlerResult `{ data: string, callback? }`, 不再直接返回字符串. socket.send 正常返回后调用并等待可选 callback, 无回调注册或定时器; callback 不上网. 不代表对端已收到或底层异步发送成功. handler/提交响应失败时不执行 callback, 提交及 callback 异常记日志, 后者不修改已发响应.
 - **`send` 语义（单一 timeout 约束整个过程）**：未连接时先 `await waitForConnect(timeout)`；连接就绪后
   剩余时间 `remaining = timeout - 已耗时` 作为请求超时。即一次 send 的「等连接 + 等回复」总耗时受同一个
   `timeout`（`PeerOptions.timeout`，默认 30000ms）约束，任一阶段超时即 reject。
@@ -37,6 +38,16 @@
   双向调用须为两端各自的 peer 启用 `startDispatchMessage`（见 rpcExample）。
 - **双向校验（谁接收不可信数据谁校验）**：server handler 在使用入站 params 前按需校验，client 调用方在使用 result 前按需校验。
   `BridgeRouter` 只在消费处直接检查 `Request`/`Response` 信封与内置远端对象参数，不提供校验器抽象。
+- **RPC 信封**: `RawMessage` 为 `{ type: 'request', data: Request }` 或 `{ type: 'response', data: Response }`.
+  `Request { id, method, params }`, `Response { id, type: 'ack' | 'data', data?, error? }`.
+  parseRawMessage 只解析一次 JSON, 校验外层 type 后调用 parseRequest/parseResponse 校验 data; ACK 也包装为 response.
+  均为统一 interface, 对应 parse 校验非空 id, 字段类型及响应类型. error 存在表示失败, 不使用 ok 联合类型.
+  请求端生成 id, 发出 Request 前登记连接级 pending call, 收到 ACK 后继续等 data; 收到 data 先回复 ACK, 提交后通过返回的 callback 按 id 完成等待.
+  请求端和执行端都通过 peer.send 发送, 都接收并校验同 id 的 ack; 共用 `_sendAndWaitAck`.
+  执行端通过返回的 callback 在 ACK 提交后原地执行 handler, 无定时器调度; 异常及序列化错误通过 data.error 回传.
+  双方在使用 RPC 前显式调用一次 startDispatchMessage, 该入口创建等待表; 无自动绑定或重复初始化保护.
+  传输超时只限制 ACK, 业务结果不限时等待. 发送失败或请求 ACK 异常时清理对应等待, 断线拒绝全部 pending call.
+  迟到或重复 data 仍回 ACK, 不重复完成调用. 结果 ACK 失败记日志, 不撤销已交付结果, 不自动重试或取消执行.
 - **错误策略**：入站可控错误回 `err.message`；非法 JSON / 缺字段的入站消息静默忽略、不崩溃；不把内部堆栈泄给对端。
 - **类对象 RPC**：server 用 `registerRemoteObj(registerName, creator)` 注册工厂，client 用
   `createRemoteObj<T>(peer, registerName)` 获取代理；`registerName` 使用全局唯一的点分命名空间。对象实例按 `BridgePeer` 隔离并在断线时释放；代理仅暴露方法，

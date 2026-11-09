@@ -25,7 +25,7 @@ listener.onConnection((peer) => {
   peer.onConnect(() => console.log('客户端已连接'));
   peer.onMessage((raw) => {
     const { name, body } = JSON.parse(raw);
-    return JSON.stringify({ reply: `已收到: ${body.text}` });
+    return { data: JSON.stringify({ reply: `已收到: ${body.text}` }) };
   });
 });
 ```
@@ -57,9 +57,37 @@ console.log(JSON.parse(resRaw));
 | `isConnected(): boolean` | 当前是否已连接 |
 | `close(): Promise<void>` | 关闭连接 |
 
+`MessageHandler` 接收 data, 统一返回 `MessageHandlerResult { data: string, callback?: () => void | Promise<void> }`, 也支持异步返回:
+
+```ts
+peer.onMessage((data) => ({
+  data,
+  callback: () => { console.log('Response submitted'); },
+}));
+```
+
+响应的 `socket.send` 正常返回后, 立即调用可选 callback 并等待其完成, 不使用注册机制或定时器调度; callback 不发送到对端. 这不代表对端已经收到响应, 也不保证底层异步发送成功. handler 抛错或提交响应时抛错均不执行 callback; 提交失败会记录错误. callback 异常单独记录且不修改已发送的响应. 不再支持直接返回字符串, 无 callback 时也须返回 `{ data: responseString }`.
+
 同一回调的多次注册各自独立取消，不影响其他监听或 `waitForConnect` / `waitForDisconnect` 的临时监听。注册时不立即通知当前状态，仅在后续连接/断开状态切换时调用。
 
 构造参数支持 `timeout`（请求超时，默认 30000ms）。
+
+## RPC 报文
+
+RPC 使用外层 `RawMessage`: `{ type: 'request', data: Request }` 或 `{ type: 'response', data: Response }`.
+`Request` 为 `{ id, method, params }`, `Response` 为统一结构 `{ id, type: 'ack' | 'data', data?, error? }`, `error` 存在时表示失败.
+`parseRawMessage` 只解析一次 JSON, 校验外层 type 后调用 `parseRequest` 或 `parseResponse` 校验 data. 请求、业务结果和 ACK 都使用这个外层信封.
+请求 ID 由调用端生成, 响应原样携带同一个 ID; 通信双方须同步升级报文格式.
+
+1. 调用端先登记 pending call, 再通过 `peer.send` 发送 Request, 等待 `{ id, type: 'ack' }`.
+2. 执行端先返回 ACK, 传输层提交 ACK 后调用返回值中的 callback 执行 handler. 完成后通过反向 `peer.send` 回传 `{ id, type: 'data', data }` 或带 error 的 Response.
+3. 调用端先对 data 回复 `{ id, type: 'ack' }`, 提交 ACK 后通过 callback 按连接和 ID 完成 pending call. 请求与结果的 ACK 均校验 ID, type 和 error.
+
+通信双方须在使用 RPC 前各自调用一次 `router.startDispatchMessage(peer)`. 该入口创建等待表并绑定消息与断线处理; 不自动初始化, 不防止重复初始化, 调用者负责每个 peer 只初始化一次.
+
+`PeerOptions.timeout` 只限制传输确认, 不限制 handler 的业务执行时长. 收到请求 ACK 后默认一直等待 data; handler 永不完成且连接不断开时也会一直等待, 不提供业务超时或远端取消能力. CPU 密集型同步任务仍会阻塞事件循环.
+
+请求发送失败或 ACK 非法/超时时清理对应等待, 连接断开时拒绝该连接全部 pending call. 业务异常和结果序列化失败通过 data.error 回传. 重复或迟到结果仍回复 ACK, 但不再重复完成调用. 结果 ACK 丢失或非法会在执行端记录错误, 不撤销已交付的结果; 不自动重试, 超时不代表远端未执行.
 
 ## 类对象 RPC
 
@@ -90,6 +118,7 @@ router.registerRemoteObj('service.counter', () => new CounterService());
 listener.onConnection((peer) => router.startDispatchMessage(peer));
 
 // client
+router.startDispatchMessage(client);
 const counter = await BridgeRouter.createRemoteObj<Counter>(client, 'service.counter');
 console.log(await counter.add(2));
 await BridgeRouter.destroyRemoteObj(counter);
@@ -186,6 +215,7 @@ console.log(localCallback.value); // 2，方法的 this 仍指向本地对象
 ```bash
 npm install
 npm run build      # 编译到 dist/
+npm test           # 核心与 demo RPC 流程回归测试
 npm run example    # 运行端到端示例
 ```
 

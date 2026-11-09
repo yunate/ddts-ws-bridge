@@ -40,8 +40,8 @@ export class BridgeRouter {
     method: string,
     ...params: unknown[]
   ): Promise<unknown> {
-    const request: _.Request = { method, params };
-    return BridgeRouter._sendRequest(caller, JSON.stringify(request));
+    const request: _.Request = { id: _.genObjectId(), method, params };
+    return BridgeRouter._sendRequest(caller, request);
   }
 
   /**
@@ -139,7 +139,16 @@ export class BridgeRouter {
   }
 
   public startDispatchMessage(peer: BridgePeer): void {
-    peer.onMessage(async (data) => JSON.stringify(await this._dispatch(peer, data)));
+    const pendingCalls = new Map<string, _.PendingCall>();
+    this._pendingCalls.set(peer, pendingCalls);
+    peer.onMessage((data) => {
+      const { response, callback } = this._dispatch(peer, data);
+      return { data: JSON.stringify({ type: "response", data: response } satisfies _.RawMessage), callback };
+    });
+    peer.onDisconnect((): void => {
+      for (const pending of pendingCalls.values()) pending.reject(new Error("Connection closed"));
+      pendingCalls.clear();
+    });
   }
 
   private constructor() {
@@ -197,23 +206,25 @@ export class BridgeRouter {
         if (reference.isDestroyed) throw new Error("远端对象已被销毁");
         const router: BridgeRouter = BridgeRouter.getRouter();
         const exportedIds: string[] = [];
-        let request: string;
+        let resultPromise: Promise<unknown>;
         try {
           const info: _.CallInfo = {
             objectId: reference.objectId,
             functionPath,
             params: router._encodeRemoteArguments(reference.caller, params, exportedIds),
           };
-          request = JSON.stringify({
+          const request: _.Request = {
+            id: _.genObjectId(),
             method: BridgeRouter._callRemoteObjectFunctionHandlerMethod,
             params: [info],
-          } satisfies _.Request);
+          };
+          resultPromise = BridgeRouter._sendRequest(reference.caller, request);
         } catch (error: unknown) {
           const objects: Map<string, object> | undefined = router._remoteObjects.get(reference.caller);
           for (const objectId of exportedIds) objects?.delete(objectId);
           throw error;
         }
-        const result: unknown = await BridgeRouter._sendRequest(reference.caller, request);
+        const result: unknown = await resultPromise;
         const callResult: _.RemoteCallResult = BridgeRouter._parseRemoteCallResult(result);
         return callResult.kind === "value"
           ? callResult.value
@@ -225,11 +236,28 @@ export class BridgeRouter {
     return proxy;
   }
 
-  private static async _sendRequest(caller: BridgePeer, request: string): Promise<unknown> {
-    const raw: string = await caller.send(request);
-    const response: _.Response = _.parseResponse(raw);
-    if (!response.ok) throw new Error(response.error);
-    return response.data;
+  private static _sendRequest(caller: BridgePeer, request: _.Request): Promise<unknown> {
+    const calls = BridgeRouter.getRouter()._pendingCalls.get(caller);
+    if (!calls) throw new Error("请先调用 startDispatchMessage");
+    const data: string = JSON.stringify({ type: "request", data: request } satisfies _.RawMessage);
+    const { id } = request;
+    return new Promise<unknown>((resolve, reject) => {
+      calls.set(id, { resolve, reject });
+      void BridgeRouter._sendAndWaitAck(caller, data, id).catch((error: unknown): void => {
+        const pending = calls.get(id);
+        if (!pending) return;
+        calls.delete(id);
+        pending.reject(error instanceof Error ? error : new Error("RPC request failed"));
+      });
+    });
+  }
+
+  private static async _sendAndWaitAck(peer: BridgePeer, data: string, id: string): Promise<void> {
+    const message: _.RawMessage = _.parseRawMessage(await peer.send(data));
+    if (message.type !== "response") throw new Error("非法 RPC 确认报文");
+    const response: _.Response = message.data;
+    if (response.id !== id || response.type !== "ack") throw new Error("非法 RPC 确认报文");
+    if (response.error !== undefined) throw new Error(response.error);
   }
 
   private static async _destroyRemoteReference(reference: _.RemoteObjectReference): Promise<boolean> {
@@ -374,22 +402,53 @@ export class BridgeRouter {
     if (!isDeleted) throw new Error("远端对象不存在或已被销毁");
   }
 
-  private async _dispatch(peer: BridgePeer, data: string): Promise<_.Response> {
-    try {
-      const request: _.Request = _.parseRequest(data);
+  private _dispatch(peer: BridgePeer, data: string): { response: _.Response; callback?: () => void | Promise<void> } {
+    const message: _.RawMessage = _.parseRawMessage(data);
+    if (message.type === "request") {
+      const request: _.Request = message.data;
       const handle: RpcHandler | undefined = this._handlers.get(request.method);
-      if (!handle) {
-        throw new Error("方法未注册");
-      }
-
-      const result: unknown = await handle(peer, ...request.params);
-      const response: _.Response = { ok: true, data: result };
-      return response;
-    } catch (err: unknown) {
-      const errorMessage: string = err instanceof Error ? err.message : "请求处理失败";
-      const response: _.Response = { ok: false, error: errorMessage };
-      return response;
+      if (!handle) return { response: { id: request.id, type: "ack", error: "方法未注册" } };
+      return {
+        response: { id: request.id, type: "ack" },
+        callback: async (): Promise<void> => {
+          if (!peer.isConnected()) return;
+          let responseMessage: string;
+          try {
+            const result: unknown = await handle(peer, ...request.params);
+            responseMessage = JSON.stringify({
+              type: "response", data: { id: request.id, type: "data", data: result },
+            } satisfies _.RawMessage);
+          } catch (err: unknown) {
+            const errorMessage: string = err instanceof Error ? err.message : "请求处理失败";
+            responseMessage = JSON.stringify({
+              type: "response", data: { id: request.id, type: "data", error: errorMessage },
+            } satisfies _.RawMessage);
+          }
+          if (!peer.isConnected()) return;
+          try {
+            await BridgeRouter._sendAndWaitAck(peer, responseMessage, request.id);
+          } catch (error: unknown) {
+            if (peer.isConnected()) console.error("[bridge] RPC result delivery failed:", error);
+          }
+        },
+      };
+    } else if (message.type === "response") {
+      const response: _.Response = message.data;
+      if (response.type !== "data") throw new Error("预期 data 响应");
+      return {
+        response: { id: response.id, type: "ack" },
+        callback: (): void => {
+          const calls = this._pendingCalls.get(peer);
+          const pending = calls?.get(response.id);
+          if (pending) {
+            calls?.delete(response.id);
+            if (response.error !== undefined) pending.reject(new Error(response.error));
+            else pending.resolve(response.data);
+          }
+        },
+      };
     }
+    throw new Error("非法报文");
   }
 
   private static readonly _createRemoteObjectHandlerMethod: string = "bridge.remoteObject.create";
@@ -415,17 +474,31 @@ export class BridgeRouter {
 
   // client 端存储远端对象代理与其引用信息的映射，便于 destroyRemoteObj 方法查找引用并阻止后续调用
   private readonly _remoteObjectReferences: WeakMap<object, _.RemoteObjectReference> = new WeakMap();
+  private readonly _pendingCalls: WeakMap<BridgePeer, Map<string, _.PendingCall>> = new WeakMap();
 }
 
 namespace _ {
-  export type Request = {
+  export type RawMessage =
+    | { type: "request"; data: Request }
+    | { type: "response"; data: Response };
+
+  export interface Request {
+    id: string;
     method: string;
     params: unknown[];
-  };
+  }
 
-  export type Response =
-    | { ok: true; data: unknown }
-    | { ok: false; error: string };
+  export interface Response {
+    id: string;
+    type: "ack" | "data";
+    data?: unknown;
+    error?: string;
+  }
+
+  export interface PendingCall {
+    resolve(value: unknown): void;
+    reject(error: Error): void;
+  }
 
   export type CallInfo = {
     objectId: string;
@@ -458,27 +531,42 @@ namespace _ {
     return value;
   }
 
-  export function parseResponse(raw: string): Response {
+  export function parseRawMessage(raw: string): RawMessage {
     const parsed: unknown = JSON.parse(raw);
-    if (parsed === null || typeof parsed !== "object" ||
-      !("ok" in parsed) || typeof parsed.ok !== "boolean") {
+    if (parsed === null || typeof parsed !== "object" || !("type" in parsed) || !("data" in parsed)) {
       throw new Error("非法报文");
     }
-    if (!parsed.ok) {
-      if (!("error" in parsed) || typeof parsed.error !== "string") throw new Error("非法报文");
-      return { ok: false, error: parsed.error };
-    }
-    return { ok: true, data: "data" in parsed ? parsed.data : undefined };
+    if (parsed.type === "request") return { type: "request", data: parseRequest(parsed.data) };
+    if (parsed.type === "response") return { type: "response", data: parseResponse(parsed.data) };
+    throw new Error("非法报文");
   }
 
-  export function parseRequest(raw: string): Request {
-    const parsed: unknown = JSON.parse(raw);
+  export function parseResponse(parsed: unknown): Response {
+    if (parsed === null || typeof parsed !== "object" ||
+      !("type" in parsed) || (parsed.type !== "ack" && parsed.type !== "data")) {
+      throw new Error("非法报文");
+    }
+    const id: string = parseString("id" in parsed ? parsed.id : undefined);
+    const error: unknown = "error" in parsed ? parsed.error : undefined;
+    if (error !== undefined && typeof error !== "string") {
+      throw new Error("非法报文");
+    }
+    return {
+      id,
+      type: parsed.type,
+      data: "data" in parsed ? parsed.data : undefined,
+      error,
+    };
+  }
+
+  export function parseRequest(parsed: unknown): Request {
     if (parsed === null || typeof parsed !== "object" ||
       !("method" in parsed) || typeof parsed.method !== "string" ||
       !("params" in parsed) || !Array.isArray(parsed.params)) {
       throw new Error("非法报文");
     }
-    return { method: parsed.method, params: parsed.params };
+    const id: string = parseString("id" in parsed ? parsed.id : undefined);
+    return { id, method: parsed.method, params: parsed.params };
   }
 
   export function parseCallInfo(value: unknown): CallInfo {

@@ -26,7 +26,7 @@ async function main() {
     conn.onMessage((raw) => {
       const { name, body } = JSON.parse(raw);
       console.log('[server] 收到:', name, body);
-      return JSON.stringify({ reply: `服务端已收到: ${body.text}` });
+      return { data: JSON.stringify({ reply: `服务端已收到: ${body.text}` }) };
     });
   });
 
@@ -36,7 +36,7 @@ async function main() {
   client.onMessage((raw) => {
     const { name, body } = JSON.parse(raw);
     console.log('[client] 收到服务端推送:', name, body);
-    return JSON.stringify({ pong: true });
+    return { data: JSON.stringify({ pong: true }) };
   });
 
   await client.waitForConnect();
